@@ -106,7 +106,9 @@ log_info "Removing backups older than $RETENTION_DAYS days..."
 CUTOFF_DATE=$(date -d "${RETENTION_DAYS} days ago" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || \
               date -v-${RETENTION_DAYS}d +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo "")
 
-if [[ -n "$CUTOFF_DATE" ]]; then
+if [[ -z "$CUTOFF_DATE" ]]; then
+  log_warn "Could not determine cutoff date; skipping retention cleanup"
+else
   az storage blob list \
     --account-name "$STORAGE_ACCOUNT" \
     --container-name "$CONTAINER" \
