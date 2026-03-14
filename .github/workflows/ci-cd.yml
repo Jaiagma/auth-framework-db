@@ -52,10 +52,10 @@ jobs:
             ${{ runner.os }}-nuget-
 
       - name: Restore dependencies
-        run: dotnet restore auth-framework-api/AuthFramework.Api.csproj
+        run: dotnet restore auth-framework-api/AuthFramework.sln
 
       - name: Build
-        run: dotnet build auth-framework-api/AuthFramework.Api.csproj \
+        run: dotnet build auth-framework-api/AuthFramework.sln \
           --no-restore --configuration Release
 
       - name: Apply database schema
@@ -126,11 +126,11 @@ jobs:
             ${{ runner.os }}-nuget-
 
       - name: Restore dependencies
-        run: dotnet restore auth-framework-api/AuthFramework.Api.csproj
+        run: dotnet restore auth-framework-api/AuthFramework.sln
 
       - name: Check formatting
         run: |
-          dotnet format auth-framework-api/AuthFramework.Api.csproj \
+          dotnet format auth-framework-api/AuthFramework.sln \
             --verify-no-changes \
             --verbosity diagnostic
 
@@ -159,11 +159,11 @@ jobs:
             ${{ runner.os }}-nuget-
 
       - name: Restore dependencies
-        run: dotnet restore auth-framework-api/AuthFramework.Api.csproj
+        run: dotnet restore auth-framework-api/AuthFramework.sln
 
       - name: Check for vulnerable packages
         run: |
-          dotnet list auth-framework-api/AuthFramework.Api.csproj \
+          dotnet list auth-framework-api/AuthFramework.sln \
             package --vulnerable --include-transitive 2>&1 | tee vuln-report.txt
           if grep -q "has the following vulnerable packages" vuln-report.txt; then
             echo "::error::Vulnerable NuGet packages detected. See vuln-report.txt."

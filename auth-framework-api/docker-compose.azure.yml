@@ -1,0 +1,57 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: authframework-postgres
+    environment:
+      POSTGRES_DB: authframework
+      POSTGRES_USER: authframework
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-localdev_password_change_me}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./azure/migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U authframework"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - authframework-net
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: authframework-api
+    ports:
+      - "8080:8080"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__DefaultConnection: "Host=postgres;Port=5432;Database=authframework;Username=authframework;Password=${DB_PASSWORD:-localdev_password_change_me};SslMode=Disable"
+      JwtSettings__SecretKey: ${JWT_SECRET_KEY:-local_dev_jwt_secret_key_min_32_chars}
+      JwtSettings__Issuer: ${JWT_ISSUER:-https://localhost:8080}
+      JwtSettings__Audience: ${JWT_AUDIENCE:-authframework-api}
+      JwtSettings__ExpiryMinutes: "60"
+      EncryptionSettings__Key: ${ENCRYPTION_KEY:-local_dev_encryption_key_32chars!}
+      ASPNETCORE_URLS: http://+:8080
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - authframework-net
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+volumes:
+  postgres_data: {}
+
+networks:
+  authframework-net:
+    driver: bridge

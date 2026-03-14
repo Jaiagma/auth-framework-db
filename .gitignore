@@ -1,0 +1,64 @@
+# .NET build artifacts
+**/bin/
+**/obj/
+**/out/
+*.user
+*.suo
+.vs/
+.idea/
+*.swp
+
+# .NET publish output
+**/publish/
+
+# Test results
+test-results/
+TestResults/
+coverage/
+*.trx
+*.cobertura.xml
+
+# NuGet
+*.nupkg
+.nuget/
+
+# Secrets / environment files
+.env
+.env.local
+.env.*.local
+*.tfvars
+!*.tfvars.example
+!examples/*.tfvars
+
+# Terraform state and lock
+**/.terraform/
+**/.terraform.lock.hcl
+**/terraform.tfstate
+**/terraform.tfstate.backup
+**/terraform.tfstate.d/
+**/tfplan
+**/tfplan.json
+
+# Azure credentials
+*.pfx
+*.p12
+*.pem
+azure-credentials.json
+service-principal.json
+*.publishsettings
+
+# Docker
+.dockerenv
+docker-compose.override.yml
+
+# Logs
+logs/
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+*.orig
+*.bak
