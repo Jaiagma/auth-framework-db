@@ -146,10 +146,11 @@ fi
 # Step 4: Database migrations
 if [[ "$SKIP_MIGRATIONS" == "false" ]]; then
   log_step "Database Migrations"
+  VAULT_NAME="authframework-${ENVIRONMENT}-kv"
   "${SCRIPT_DIR}/migrate-database.sh" \
     --subscription "$SUBSCRIPTION" \
     --resource-group "$RESOURCE_GROUP" \
-    --environment "$ENVIRONMENT"
+    --vault-name "$VAULT_NAME"
 fi
 
 # Step 5: Verify deployment

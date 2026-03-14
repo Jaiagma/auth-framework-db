@@ -32,6 +32,9 @@ param postgresqlSkuName string = 'Standard_D2s_v3'
 @description('Container image tag to deploy')
 param imageTag string = 'latest'
 
+@description('Azure Container Registry login server (e.g. myacr.azurecr.io)')
+param acrLoginServer string
+
 var resourcePrefix = '${projectName}-${environment}'
 var commonTags = {
   Environment: environment
@@ -96,6 +99,7 @@ module appService 'app_service.bicep' = {
     subnetId: networking.outputs.appSubnetId
     imageTag: imageTag
     appServiceSkuName: appServiceSkuName
+    acrLoginServer: acrLoginServer
   }
   dependsOn: [keyVault, monitoring]
 }

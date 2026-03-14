@@ -46,6 +46,9 @@
     },
     "imageTag": {
       "value": "latest"
+    },
+    "acrLoginServer": {
+      "value": "YOUR_ACR_NAME.azurecr.io"
     }
   }
 }

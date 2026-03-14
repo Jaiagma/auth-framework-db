@@ -25,6 +25,9 @@ param imageTag string = 'latest'
 @description('App Service Plan SKU')
 param appServiceSkuName string = 'B2'
 
+@description('Azure Container Registry login server (e.g. myacr.azurecr.io)')
+param acrLoginServer string
+
 var appName = '${resourcePrefix}-api'
 var planName = '${resourcePrefix}-asp'
 var isProduction = environment == 'prod'
@@ -56,14 +59,13 @@ resource webApp 'Microsoft.Web/sites@2023-01-01' = {
     siteConfig: {
       alwaysOn: true
       healthCheckPath: '/health'
-      linuxFxVersion: 'DOCKER|${appName}acr.azurecr.io/authframework-api:${imageTag}'
+      linuxFxVersion: 'DOCKER|${acrLoginServer}/authframework-api:${imageTag}'
       appSettings: [
         {
           name: 'ASPNETCORE_ENVIRONMENT'
           value: isProduction ? 'Production' : 'Staging'
         }
         {
-          name: 'ASPNETCORE_URLS'
           value: 'http://+:8080'
         }
         {
@@ -124,7 +126,7 @@ resource stagingSlot 'Microsoft.Web/sites/slots@2023-01-01' = {
     siteConfig: {
       alwaysOn: false
       healthCheckPath: '/health'
-      linuxFxVersion: 'DOCKER|${appName}acr.azurecr.io/authframework-api:${imageTag}'
+      linuxFxVersion: 'DOCKER|${acrLoginServer}/authframework-api:${imageTag}'
       appSettings: [
         {
           name: 'ASPNETCORE_ENVIRONMENT'

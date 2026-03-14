@@ -23,8 +23,8 @@ param privateDnsZoneId string
 @description('PostgreSQL SKU name')
 param skuName string = 'Standard_D2s_v3'
 
-@description('PostgreSQL storage in MB')
-param storageMb int = 32768
+@description('PostgreSQL storage in GB')
+param storageSizeGb int = 32
 
 @description('PostgreSQL version')
 param postgresVersion string = '16'
@@ -45,15 +45,17 @@ resource postgresServer 'Microsoft.DBforPostgreSQL/flexibleServers@2023-03-01-pr
     administratorLoginPassword: dbPassword
     version: postgresVersion
     storage: {
-      storageSizeGB: storageMb / 1024
+      storageSizeGB: storageSizeGb
     }
     backup: {
       backupRetentionDays: 35
       geoRedundantBackup: isProduction ? 'Enabled' : 'Disabled'
     }
-    highAvailability: {
-      mode: isProduction ? 'ZoneRedundant' : 'Disabled'
-      standbyAvailabilityZone: isProduction ? '2' : ''
+    highAvailability: isProduction ? {
+      mode: 'ZoneRedundant'
+      standbyAvailabilityZone: '2'
+    } : {
+      mode: 'Disabled'
     }
     network: {
       delegatedSubnetResourceId: subnetId

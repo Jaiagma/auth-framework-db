@@ -82,7 +82,7 @@ if [[ "$SKIP_ROLES" == "false" ]]; then
   log_info "Creating application roles..."
   run_sql "DO \$\$ BEGIN
     IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'authframework_app') THEN
-      CREATE ROLE authframework_app LOGIN;
+      CREATE ROLE authframework_app LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION;
     END IF;
   END \$\$;"
 

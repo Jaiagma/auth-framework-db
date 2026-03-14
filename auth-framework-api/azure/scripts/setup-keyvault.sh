@@ -79,7 +79,7 @@ if [[ -n "${DB_PASSWORD:-}" ]]; then
   set_secret "db-password" "$DB_PASSWORD" "PostgreSQL administrator password"
 else
   log_info "DB_PASSWORD not set; generating random password..."
-  GENERATED_PW=$(openssl rand -base64 32 | tr -d "=+/" | cut -c1-32)
+  GENERATED_PW=$(openssl rand -base64 24 | tr -d '\n')
   set_secret "db-password" "$GENERATED_PW" "PostgreSQL administrator password (auto-generated)"
   log_info "Generated DB password stored in Key Vault"
 fi

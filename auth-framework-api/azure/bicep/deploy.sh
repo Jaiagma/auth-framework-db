@@ -125,15 +125,16 @@ if [[ "$WHAT_IF" == "true" ]]; then
   log_success "What-if complete"
 else
   log_info "Deploying Bicep templates..."
+  DEPLOYMENT_NAME="authframework-${ENVIRONMENT}-$(date +%Y%m%d%H%M%S)"
   "${DEPLOY_CMD[@]}" create \
-    --name "authframework-${ENVIRONMENT}-$(date +%Y%m%d%H%M%S)" \
+    --name "$DEPLOYMENT_NAME" \
     --output table
 
   log_success "Deployment complete!"
   log_info "Fetching outputs..."
   az deployment group show \
     --resource-group "$RESOURCE_GROUP" \
-    --name "$(az deployment group list --resource-group "$RESOURCE_GROUP" --query '[0].name' -o tsv)" \
+    --name "$DEPLOYMENT_NAME" \
     --query properties.outputs \
     -o table
 fi
