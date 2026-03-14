@@ -1,0 +1,344 @@
+<?xml version="1.0"?>
+<doc>
+    <assembly>
+        <name>AuthFramework.Shared</name>
+    </assembly>
+    <members>
+        <member name="T:AuthFramework.Shared.Exceptions.AccountLockedException">
+            <summary>Thrown when a login attempt is made on a locked account.</summary>
+        </member>
+        <member name="P:AuthFramework.Shared.Exceptions.AccountLockedException.LockedUntil">
+            <summary>When the account lock expires.</summary>
+        </member>
+        <member name="M:AuthFramework.Shared.Exceptions.AccountLockedException.#ctor(System.DateTimeOffset)">
+            <inheritdoc/>
+        </member>
+        <member name="T:AuthFramework.Shared.Exceptions.AuthenticationException">
+            <summary>Thrown when authentication fails (invalid credentials, account issues, etc.).</summary>
+        </member>
+        <member name="M:AuthFramework.Shared.Exceptions.AuthenticationException.#ctor(System.String)">
+            <inheritdoc/>
+        </member>
+        <member name="M:AuthFramework.Shared.Exceptions.AuthenticationException.#ctor(System.String,System.Exception)">
+            <inheritdoc/>
+        </member>
+        <member name="T:AuthFramework.Shared.Exceptions.AuthFrameworkException">
+            <summary>Base exception for all AuthFramework application errors.</summary>
+        </member>
+        <member name="P:AuthFramework.Shared.Exceptions.AuthFrameworkException.ErrorCode">
+            <summary>Machine-readable error code.</summary>
+        </member>
+        <member name="M:AuthFramework.Shared.Exceptions.AuthFrameworkException.#ctor(System.String,System.String)">
+            <inheritdoc/>
+        </member>
+        <member name="M:AuthFramework.Shared.Exceptions.AuthFrameworkException.#ctor(System.String,System.Exception,System.String)">
+            <inheritdoc/>
+        </member>
+        <member name="T:AuthFramework.Shared.Exceptions.InvalidTokenException">
+            <summary>Thrown when a token (JWT, reset token, verification token, etc.) is invalid or expired.</summary>
+        </member>
+        <member name="M:AuthFramework.Shared.Exceptions.InvalidTokenException.#ctor(System.String)">
+            <inheritdoc/>
+        </member>
+        <member name="M:AuthFramework.Shared.Exceptions.InvalidTokenException.#ctor(System.String,System.Exception)">
+            <inheritdoc/>
+        </member>
+        <member name="T:AuthFramework.Shared.Exceptions.MfaRequiredException">
+            <summary>Thrown when an operation requires MFA to be completed first.</summary>
+        </member>
+        <member name="P:AuthFramework.Shared.Exceptions.MfaRequiredException.ChallengeId">
+            <summary>The MFA challenge ID that must be completed.</summary>
+        </member>
+        <member name="M:AuthFramework.Shared.Exceptions.MfaRequiredException.#ctor(System.Nullable{System.Guid})">
+            <inheritdoc/>
+        </member>
+        <member name="T:AuthFramework.Shared.Exceptions.TenantNotFoundException">
+            <summary>Thrown when a referenced tenant cannot be found.</summary>
+        </member>
+        <member name="P:AuthFramework.Shared.Exceptions.TenantNotFoundException.TenantId">
+            <summary>The tenant ID that was not found.</summary>
+        </member>
+        <member name="M:AuthFramework.Shared.Exceptions.TenantNotFoundException.#ctor(System.Guid)">
+            <inheritdoc/>
+        </member>
+        <member name="M:AuthFramework.Shared.Exceptions.TenantNotFoundException.#ctor(System.String)">
+            <inheritdoc/>
+        </member>
+        <member name="T:AuthFramework.Shared.Exceptions.UserNotFoundException">
+            <summary>Thrown when a referenced user cannot be found.</summary>
+        </member>
+        <member name="P:AuthFramework.Shared.Exceptions.UserNotFoundException.UserId">
+            <summary>The user ID that was not found.</summary>
+        </member>
+        <member name="M:AuthFramework.Shared.Exceptions.UserNotFoundException.#ctor(System.Guid)">
+            <inheritdoc/>
+        </member>
+        <member name="T:AuthFramework.Shared.Exceptions.ValidationException">
+            <summary>Thrown when input validation fails.</summary>
+        </member>
+        <member name="P:AuthFramework.Shared.Exceptions.ValidationException.Errors">
+            <summary>Individual validation error messages.</summary>
+        </member>
+        <member name="M:AuthFramework.Shared.Exceptions.ValidationException.#ctor(System.String)">
+            <inheritdoc/>
+        </member>
+        <member name="M:AuthFramework.Shared.Exceptions.ValidationException.#ctor(System.Collections.Generic.IEnumerable{System.String})">
+            <inheritdoc/>
+        </member>
+        <member name="T:AuthFramework.Shared.Extensions.ClaimsPrincipalExtensions">
+            <summary>Extension methods for extracting well-known claims from a <see cref="T:System.Security.Claims.ClaimsPrincipal"/>.</summary>
+        </member>
+        <member name="M:AuthFramework.Shared.Extensions.ClaimsPrincipalExtensions.GetUserId(System.Security.Claims.ClaimsPrincipal)">
+            <summary>Extracts the user ID from the principal's claims. Returns <see cref="F:System.Guid.Empty"/> if not present.</summary>
+        </member>
+        <member name="M:AuthFramework.Shared.Extensions.ClaimsPrincipalExtensions.GetTenantId(System.Security.Claims.ClaimsPrincipal)">
+            <summary>Extracts the tenant ID from the principal's claims. Returns <see cref="F:System.Guid.Empty"/> if not present.</summary>
+        </member>
+        <member name="M:AuthFramework.Shared.Extensions.ClaimsPrincipalExtensions.GetSessionId(System.Security.Claims.ClaimsPrincipal)">
+            <summary>Extracts the session ID from the principal's claims. Returns <see cref="F:System.Guid.Empty"/> if not present.</summary>
+        </member>
+        <member name="M:AuthFramework.Shared.Extensions.ClaimsPrincipalExtensions.GetEmail(System.Security.Claims.ClaimsPrincipal)">
+            <summary>Extracts the email claim from the principal.</summary>
+        </member>
+        <member name="M:AuthFramework.Shared.Extensions.ClaimsPrincipalExtensions.IsInRole(System.Security.Claims.ClaimsPrincipal,System.String)">
+            <summary>Returns true if the principal has the specified role.</summary>
+        </member>
+        <member name="T:AuthFramework.Shared.Extensions.ClaimsPrincipalExtensions.JwtRegisteredClaimNames">
+            <summary>JWT registered claim names re-exported for convenience.</summary>
+        </member>
+        <member name="T:AuthFramework.Shared.Extensions.StringExtensions">
+            <summary>String utility extension methods.</summary>
+        </member>
+        <member name="M:AuthFramework.Shared.Extensions.StringExtensions.EmailRegex">
+            <remarks>
+            Pattern:<br/>
+            <code>^[a-zA-Z0-9._%+\\-]+@[a-zA-Z0-9.\\-]+\\.[a-zA-Z]{2,}$</code><br/>
+            Explanation:<br/>
+            <code>
+            ○ Match if at the beginning of the string.<br/>
+            ○ Match a character in the set [%+-.0-9A-Z_a-z] atomically at least once.<br/>
+            ○ Match '@'.<br/>
+            ○ Match a character in the set [-.0-9A-Za-z] greedily at least once.<br/>
+            ○ Match '.'.<br/>
+            ○ Match a character in the set [A-Za-z] atomically at least twice.<br/>
+            ○ Match if at the end of the string or if before an ending newline.<br/>
+            </code>
+            </remarks>
+        </member>
+        <member name="M:AuthFramework.Shared.Extensions.StringExtensions.SlugCleanupRegex">
+            <remarks>
+            Pattern:<br/>
+            <code>[^a-z0-9\\-]</code><br/>
+            Explanation:<br/>
+            <code>
+            ○ Match a character in the set [^-0-9a-z].<br/>
+            </code>
+            </remarks>
+        </member>
+        <member name="M:AuthFramework.Shared.Extensions.StringExtensions.MultiHyphenRegex">
+            <remarks>
+            Pattern:<br/>
+            <code>\\-{2,}</code><br/>
+            Explanation:<br/>
+            <code>
+            ○ Match '-' atomically at least twice.<br/>
+            </code>
+            </remarks>
+        </member>
+        <member name="M:AuthFramework.Shared.Extensions.StringExtensions.IsValidEmail(System.String)">
+            <summary>Returns true if the string is a valid email address format.</summary>
+        </member>
+        <member name="M:AuthFramework.Shared.Extensions.StringExtensions.ToSlug(System.String)">
+            <summary>Converts a string to a URL-safe slug (lowercase, hyphens, no special chars).</summary>
+        </member>
+        <member name="M:AuthFramework.Shared.Extensions.StringExtensions.Truncate(System.String,System.Int32,System.String)">
+            <summary>Truncates a string to a maximum length, optionally appending an ellipsis.</summary>
+        </member>
+        <member name="M:AuthFramework.Shared.Extensions.StringExtensions.MaskEmail(System.String)">
+            <summary>Masks a string for logging (e.g., "user@example.com" -> "use***@example.com").</summary>
+        </member>
+        <member name="M:AuthFramework.Shared.Extensions.StringExtensions.HasValue(System.String)">
+            <summary>Returns true if the string is not null and not whitespace.</summary>
+        </member>
+        <member name="T:AuthFramework.Shared.Utilities.PaginationHelper">
+            <summary>Helpers for constructing pagination parameters.</summary>
+        </member>
+        <member name="F:AuthFramework.Shared.Utilities.PaginationHelper.DefaultPageSize">
+            <summary>Default page size.</summary>
+        </member>
+        <member name="F:AuthFramework.Shared.Utilities.PaginationHelper.MaxPageSize">
+            <summary>Maximum page size to prevent oversized queries.</summary>
+        </member>
+        <member name="M:AuthFramework.Shared.Utilities.PaginationHelper.Normalize(System.Int32,System.Int32)">
+            <summary>Normalizes page and pageSize values to valid ranges.</summary>
+        </member>
+        <member name="M:AuthFramework.Shared.Utilities.PaginationHelper.Skip(System.Int32,System.Int32)">
+            <summary>Calculates the number of items to skip for a given page.</summary>
+        </member>
+        <member name="T:AuthFramework.Shared.Utilities.PasswordValidator">
+            <summary>Enforces password strength requirements.</summary>
+        </member>
+        <member name="M:AuthFramework.Shared.Utilities.PasswordValidator.Validate(System.String)">
+            <summary>
+            Validates a password against the configured strength rules.
+            Throws <see cref="T:AuthFramework.Shared.Exceptions.ValidationException"/> if the password does not meet requirements.
+            </summary>
+            <param name="password">The plaintext password to validate.</param>
+        </member>
+        <member name="M:AuthFramework.Shared.Utilities.PasswordValidator.IsValid(System.String)">
+            <summary>Returns true if the password meets all strength requirements.</summary>
+        </member>
+        <member name="T:AuthFramework.Shared.Utilities.TotpHelper">
+            <summary>
+            TOTP (Time-based One-Time Password) helper implementing RFC 6238.
+            Uses HMAC-SHA1 with a 30-second time step and 6-digit codes.
+            </summary>
+        </member>
+        <member name="M:AuthFramework.Shared.Utilities.TotpHelper.GenerateCode(System.String)">
+            <summary>Generates a TOTP code for the current time window.</summary>
+            <param name="base32Secret">The base-32 encoded TOTP secret.</param>
+        </member>
+        <member name="M:AuthFramework.Shared.Utilities.TotpHelper.VerifyCode(System.String,System.String)">
+            <summary>
+            Verifies a TOTP code, allowing for clock drift of ±<see cref="F:AuthFramework.Shared.Utilities.TotpHelper.AllowedDrift"/> time windows.
+            </summary>
+        </member>
+        <member name="M:AuthFramework.Shared.Utilities.TotpHelper.GenerateQrCodeUri(System.String,System.String,System.String)">
+            <summary>Generates a QR code URI for authenticator apps (otpauth:// scheme).</summary>
+        </member>
+        <member name="M:AuthFramework.Shared.Utilities.TotpHelper.ToBase32(System.Byte[])">
+            <summary>Encodes a byte array to a Base32 string.</summary>
+        </member>
+        <member name="T:AuthFramework.Shared.Utilities.UuidV7Generator">
+            <summary>
+            Generates UUID version 7 identifiers (time-ordered, RFC 9562).
+            UUID v7 embeds a Unix millisecond timestamp in the high bits, making UUIDs
+            naturally sortable by creation time — ideal for database primary keys.
+            </summary>
+        </member>
+        <member name="M:AuthFramework.Shared.Utilities.UuidV7Generator.NewGuid">
+            <summary>Generates a new UUID v7.</summary>
+        </member>
+        <member name="M:AuthFramework.Shared.Utilities.UuidV7Generator.GetTimestampMs(System.Guid)">
+            <summary>Extracts the Unix millisecond timestamp from a UUID v7.</summary>
+        </member>
+        <member name="M:AuthFramework.Shared.Utilities.UuidV7Generator.GetCreationTime(System.Guid)">
+            <summary>Returns the <see cref="T:System.DateTimeOffset"/> embedded in a UUID v7.</summary>
+        </member>
+        <member name="T:System.Text.RegularExpressions.Generated.EmailRegex_0">
+            <summary>Custom <see cref="T:System.Text.RegularExpressions.Regex"/>-derived type for the EmailRegex method.</summary>
+        </member>
+        <member name="F:System.Text.RegularExpressions.Generated.EmailRegex_0.Instance">
+            <summary>Cached, thread-safe singleton instance.</summary>
+        </member>
+        <member name="M:System.Text.RegularExpressions.Generated.EmailRegex_0.#ctor">
+            <summary>Initializes the instance.</summary>
+        </member>
+        <member name="T:System.Text.RegularExpressions.Generated.EmailRegex_0.RunnerFactory">
+            <summary>Provides a factory for creating <see cref="T:System.Text.RegularExpressions.RegexRunner"/> instances to be used by methods on <see cref="T:System.Text.RegularExpressions.Regex"/>.</summary>
+        </member>
+        <member name="M:System.Text.RegularExpressions.Generated.EmailRegex_0.RunnerFactory.CreateInstance">
+            <summary>Creates an instance of a <see cref="T:System.Text.RegularExpressions.RegexRunner"/> used by methods on <see cref="T:System.Text.RegularExpressions.Regex"/>.</summary>
+        </member>
+        <member name="T:System.Text.RegularExpressions.Generated.EmailRegex_0.RunnerFactory.Runner">
+            <summary>Provides the runner that contains the custom logic implementing the specified regular expression.</summary>
+        </member>
+        <member name="M:System.Text.RegularExpressions.Generated.EmailRegex_0.RunnerFactory.Runner.Scan(System.ReadOnlySpan{System.Char})">
+            <summary>Scan the <paramref name="inputSpan"/> starting from base.runtextstart for the next match.</summary>
+            <param name="inputSpan">The text being scanned by the regular expression.</param>
+        </member>
+        <member name="M:System.Text.RegularExpressions.Generated.EmailRegex_0.RunnerFactory.Runner.TryFindNextPossibleStartingPosition(System.ReadOnlySpan{System.Char})">
+            <summary>Search <paramref name="inputSpan"/> starting from base.runtextpos for the next location a match could possibly start.</summary>
+            <param name="inputSpan">The text being scanned by the regular expression.</param>
+            <returns>true if a possible match was found; false if no more matches are possible.</returns>
+        </member>
+        <member name="M:System.Text.RegularExpressions.Generated.EmailRegex_0.RunnerFactory.Runner.TryMatchAtCurrentPosition(System.ReadOnlySpan{System.Char})">
+            <summary>Determine whether <paramref name="inputSpan"/> at base.runtextpos is a match for the regular expression.</summary>
+            <param name="inputSpan">The text being scanned by the regular expression.</param>
+            <returns>true if the regular expression matches at the current position; otherwise, false.</returns>
+        </member>
+        <member name="T:System.Text.RegularExpressions.Generated.SlugCleanupRegex_1">
+            <summary>Custom <see cref="T:System.Text.RegularExpressions.Regex"/>-derived type for the SlugCleanupRegex method.</summary>
+        </member>
+        <member name="F:System.Text.RegularExpressions.Generated.SlugCleanupRegex_1.Instance">
+            <summary>Cached, thread-safe singleton instance.</summary>
+        </member>
+        <member name="M:System.Text.RegularExpressions.Generated.SlugCleanupRegex_1.#ctor">
+            <summary>Initializes the instance.</summary>
+        </member>
+        <member name="T:System.Text.RegularExpressions.Generated.SlugCleanupRegex_1.RunnerFactory">
+            <summary>Provides a factory for creating <see cref="T:System.Text.RegularExpressions.RegexRunner"/> instances to be used by methods on <see cref="T:System.Text.RegularExpressions.Regex"/>.</summary>
+        </member>
+        <member name="M:System.Text.RegularExpressions.Generated.SlugCleanupRegex_1.RunnerFactory.CreateInstance">
+            <summary>Creates an instance of a <see cref="T:System.Text.RegularExpressions.RegexRunner"/> used by methods on <see cref="T:System.Text.RegularExpressions.Regex"/>.</summary>
+        </member>
+        <member name="T:System.Text.RegularExpressions.Generated.SlugCleanupRegex_1.RunnerFactory.Runner">
+            <summary>Provides the runner that contains the custom logic implementing the specified regular expression.</summary>
+        </member>
+        <member name="M:System.Text.RegularExpressions.Generated.SlugCleanupRegex_1.RunnerFactory.Runner.Scan(System.ReadOnlySpan{System.Char})">
+            <summary>Scan the <paramref name="inputSpan"/> starting from base.runtextstart for the next match.</summary>
+            <param name="inputSpan">The text being scanned by the regular expression.</param>
+        </member>
+        <member name="M:System.Text.RegularExpressions.Generated.SlugCleanupRegex_1.RunnerFactory.Runner.TryFindNextPossibleStartingPosition(System.ReadOnlySpan{System.Char})">
+            <summary>Search <paramref name="inputSpan"/> starting from base.runtextpos for the next location a match could possibly start.</summary>
+            <param name="inputSpan">The text being scanned by the regular expression.</param>
+            <returns>true if a possible match was found; false if no more matches are possible.</returns>
+        </member>
+        <member name="T:System.Text.RegularExpressions.Generated.MultiHyphenRegex_2">
+            <summary>Custom <see cref="T:System.Text.RegularExpressions.Regex"/>-derived type for the MultiHyphenRegex method.</summary>
+        </member>
+        <member name="F:System.Text.RegularExpressions.Generated.MultiHyphenRegex_2.Instance">
+            <summary>Cached, thread-safe singleton instance.</summary>
+        </member>
+        <member name="M:System.Text.RegularExpressions.Generated.MultiHyphenRegex_2.#ctor">
+            <summary>Initializes the instance.</summary>
+        </member>
+        <member name="T:System.Text.RegularExpressions.Generated.MultiHyphenRegex_2.RunnerFactory">
+            <summary>Provides a factory for creating <see cref="T:System.Text.RegularExpressions.RegexRunner"/> instances to be used by methods on <see cref="T:System.Text.RegularExpressions.Regex"/>.</summary>
+        </member>
+        <member name="M:System.Text.RegularExpressions.Generated.MultiHyphenRegex_2.RunnerFactory.CreateInstance">
+            <summary>Creates an instance of a <see cref="T:System.Text.RegularExpressions.RegexRunner"/> used by methods on <see cref="T:System.Text.RegularExpressions.Regex"/>.</summary>
+        </member>
+        <member name="T:System.Text.RegularExpressions.Generated.MultiHyphenRegex_2.RunnerFactory.Runner">
+            <summary>Provides the runner that contains the custom logic implementing the specified regular expression.</summary>
+        </member>
+        <member name="M:System.Text.RegularExpressions.Generated.MultiHyphenRegex_2.RunnerFactory.Runner.Scan(System.ReadOnlySpan{System.Char})">
+            <summary>Scan the <paramref name="inputSpan"/> starting from base.runtextstart for the next match.</summary>
+            <param name="inputSpan">The text being scanned by the regular expression.</param>
+        </member>
+        <member name="M:System.Text.RegularExpressions.Generated.MultiHyphenRegex_2.RunnerFactory.Runner.TryFindNextPossibleStartingPosition(System.ReadOnlySpan{System.Char})">
+            <summary>Search <paramref name="inputSpan"/> starting from base.runtextpos for the next location a match could possibly start.</summary>
+            <param name="inputSpan">The text being scanned by the regular expression.</param>
+            <returns>true if a possible match was found; false if no more matches are possible.</returns>
+        </member>
+        <member name="M:System.Text.RegularExpressions.Generated.MultiHyphenRegex_2.RunnerFactory.Runner.TryMatchAtCurrentPosition(System.ReadOnlySpan{System.Char})">
+            <summary>Determine whether <paramref name="inputSpan"/> at base.runtextpos is a match for the regular expression.</summary>
+            <param name="inputSpan">The text being scanned by the regular expression.</param>
+            <returns>true if the regular expression matches at the current position; otherwise, false.</returns>
+        </member>
+        <member name="T:System.Text.RegularExpressions.Generated.Utilities">
+            <summary>Helper methods used by generated <see cref="T:System.Text.RegularExpressions.Regex"/>-derived implementations.</summary>
+        </member>
+        <member name="F:System.Text.RegularExpressions.Generated.Utilities.s_defaultTimeout">
+            <summary>Default timeout value set in <see cref="T:System.AppContext"/>, or <see cref="F:System.Text.RegularExpressions.Regex.InfiniteMatchTimeout"/> if none was set.</summary>
+        </member>
+        <member name="F:System.Text.RegularExpressions.Generated.Utilities.s_hasTimeout">
+            <summary>Whether <see cref="F:System.Text.RegularExpressions.Generated.Utilities.s_defaultTimeout"/> is non-infinite.</summary>
+        </member>
+        <member name="F:System.Text.RegularExpressions.Generated.Utilities.s_asciiLetters">
+            <summary>Supports searching for characters in or not in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz".</summary>
+        </member>
+        <member name="F:System.Text.RegularExpressions.Generated.Utilities.s_ascii_2068FF03FEFFFF87FEFFFF07">
+            <summary>Supports searching for characters in or not in "%+-.0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz".</summary>
+        </member>
+        <member name="F:System.Text.RegularExpressions.Generated.Utilities.s_ascii_20FF0300000000FEFFFF07">
+            <summary>Supports searching for characters in or not in "-0123456789abcdefghijklmnopqrstuvwxyz".</summary>
+        </member>
+        <member name="F:System.Text.RegularExpressions.Generated.Utilities.s_ascii_60FF03FEFFFF07FEFFFF07">
+            <summary>Supports searching for characters in or not in "-.0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz".</summary>
+        </member>
+        <member name="F:System.Text.RegularExpressions.Generated.Utilities.s_indexOfString_E9B12A10F93AEB4E9720A2C27CB6562AC15838B44CB5A1D62A146965CC06B2A9">
+            <summary>Supports searching for the string "--".</summary>
+        </member>
+    </members>
+</doc>

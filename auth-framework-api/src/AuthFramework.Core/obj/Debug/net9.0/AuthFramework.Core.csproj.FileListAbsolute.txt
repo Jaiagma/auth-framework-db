@@ -1,0 +1,14 @@
+/home/runner/work/auth-framework-db/auth-framework-db/auth-framework-api/src/AuthFramework.Core/bin/Debug/net9.0/AuthFramework.Core.deps.json
+/home/runner/work/auth-framework-db/auth-framework-db/auth-framework-api/src/AuthFramework.Core/bin/Debug/net9.0/AuthFramework.Core.dll
+/home/runner/work/auth-framework-db/auth-framework-db/auth-framework-api/src/AuthFramework.Core/bin/Debug/net9.0/AuthFramework.Core.pdb
+/home/runner/work/auth-framework-db/auth-framework-db/auth-framework-api/src/AuthFramework.Core/bin/Debug/net9.0/AuthFramework.Core.xml
+/home/runner/work/auth-framework-db/auth-framework-db/auth-framework-api/src/AuthFramework.Core/obj/Debug/net9.0/AuthFramework.Core.GeneratedMSBuildEditorConfig.editorconfig
+/home/runner/work/auth-framework-db/auth-framework-db/auth-framework-api/src/AuthFramework.Core/obj/Debug/net9.0/AuthFramework.Core.AssemblyInfoInputs.cache
+/home/runner/work/auth-framework-db/auth-framework-db/auth-framework-api/src/AuthFramework.Core/obj/Debug/net9.0/AuthFramework.Core.AssemblyInfo.cs
+/home/runner/work/auth-framework-db/auth-framework-db/auth-framework-api/src/AuthFramework.Core/obj/Debug/net9.0/AuthFramework.Core.csproj.CoreCompileInputs.cache
+/home/runner/work/auth-framework-db/auth-framework-db/auth-framework-api/src/AuthFramework.Core/obj/Debug/net9.0/AuthFramework.Core.sourcelink.json
+/home/runner/work/auth-framework-db/auth-framework-db/auth-framework-api/src/AuthFramework.Core/obj/Debug/net9.0/AuthFramework.Core.dll
+/home/runner/work/auth-framework-db/auth-framework-db/auth-framework-api/src/AuthFramework.Core/obj/Debug/net9.0/refint/AuthFramework.Core.dll
+/home/runner/work/auth-framework-db/auth-framework-db/auth-framework-api/src/AuthFramework.Core/obj/Debug/net9.0/AuthFramework.Core.xml
+/home/runner/work/auth-framework-db/auth-framework-db/auth-framework-api/src/AuthFramework.Core/obj/Debug/net9.0/AuthFramework.Core.pdb
+/home/runner/work/auth-framework-db/auth-framework-db/auth-framework-api/src/AuthFramework.Core/obj/Debug/net9.0/ref/AuthFramework.Core.dll
