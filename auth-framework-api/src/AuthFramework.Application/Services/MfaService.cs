@@ -206,17 +206,17 @@ public sealed class MfaService : IMfaService
 
     private static string GenerateRecoveryCode()
     {
-        var bytes = new byte[6];
+        // 12 random bytes → 12 independent characters, formatted as XXXX-XXXX-XXXX
+        var bytes = new byte[12];
         RandomNumberGenerator.Fill(bytes);
-        // Format as XXXX-XXXX-XXXX (base32-like, alphanumeric)
-        var chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+        const string chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
         return string.Create(14, bytes, (span, b) =>
         {
-            for (var i = 0; i < 4; i++) span[i] = chars[b[0] % chars.Length];
+            for (var i = 0; i < 4; i++) span[i] = chars[b[i] % chars.Length];
             span[4] = '-';
-            for (var i = 0; i < 4; i++) span[5 + i] = chars[b[2] % chars.Length];
+            for (var i = 0; i < 4; i++) span[5 + i] = chars[b[4 + i] % chars.Length];
             span[9] = '-';
-            for (var i = 0; i < 4; i++) span[10 + i] = chars[b[4] % chars.Length];
+            for (var i = 0; i < 4; i++) span[10 + i] = chars[b[8 + i] % chars.Length];
         });
     }
 }
