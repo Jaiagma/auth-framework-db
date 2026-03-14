@@ -52,17 +52,25 @@ stages:
               --no-restore
             displayName: Build solution
 
+          - script: >
+              dotnet publish auth-framework-api/src/AuthFramework.Api/AuthFramework.Api.csproj
+              --configuration $(buildConfiguration)
+              --no-restore
+              --output $(Build.ArtifactStagingDirectory)/publish
+            displayName: Publish API binaries
+
           - task: PublishPipelineArtifact@1
             displayName: Publish build artifact
             inputs:
-              targetPath: $(Build.ArtifactStagingDirectory)
+              targetPath: $(Build.ArtifactStagingDirectory)/publish
               artifact: build-output
               publishLocation: pipeline
 
           - task: Docker@2
-            displayName: Build Docker image
+            displayName: Build and push Docker image to ACR
             inputs:
-              command: build
+              command: buildAndPush
+              containerRegistry: $(ACR_SERVICE_CONNECTION)
               repository: $(imageRepository)
               dockerfile: $(dockerfilePath)
               buildContext: $(dockerBuildContext)
@@ -182,16 +190,6 @@ stages:
           runOnce:
             deploy:
               steps:
-                - task: Docker@2
-                  displayName: Push image to ACR
-                  inputs:
-                    command: push
-                    containerRegistry: $(ACR_SERVICE_CONNECTION)
-                    repository: $(imageRepository)
-                    tags: |
-                      $(tag)
-                      latest
-
                 - task: AzureWebApp@1
                   displayName: Deploy to App Service staging slot
                   inputs:
