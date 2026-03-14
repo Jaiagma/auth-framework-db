@@ -23,6 +23,8 @@ jobs:
   terraform-apply:
     name: Terraform Apply
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     environment: ${{ github.event.inputs.environment || 'staging' }}
     steps:
       - name: Checkout code

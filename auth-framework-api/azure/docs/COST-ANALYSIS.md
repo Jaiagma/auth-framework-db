@@ -93,7 +93,7 @@ az monitor metrics list \
   --resource "/subscriptions/$SUBSCRIPTION_ID/resourceGroups/$RESOURCE_GROUP/providers/Microsoft.Web/serverfarms/asp-auth-framework-prod" \
   --metric "CpuPercentage" \
   --interval P1D \
-  --start-time "$(date -u -d '7 days ago' '+%Y-%m-%dT%H:%M:%SZ')" \
+  --start-time "$(date -u -d '7 days ago' '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || date -u -v-7d '+%Y-%m-%dT%H:%M:%SZ')" \
   --end-time "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" \
   --aggregation Average \
   --output table

@@ -31,6 +31,8 @@ jobs:
   build-and-test:
     name: Build and Test
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
@@ -141,6 +143,8 @@ jobs:
   deploy-infrastructure:
     name: Deploy Infrastructure
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     needs: build-and-push-image
     environment: ${{ github.event.inputs.environment || 'staging' }}
     steps:
@@ -186,6 +190,8 @@ jobs:
   run-migrations:
     name: Run Database Migrations
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     needs: deploy-infrastructure
     if: ${{ !inputs.skip_migrations }}
     steps:
@@ -225,6 +231,8 @@ jobs:
   deploy-app:
     name: Deploy Application
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     needs: [build-and-push-image, run-migrations]
     if: always() && needs.build-and-push-image.result == 'success' && (needs.run-migrations.result == 'success' || needs.run-migrations.result == 'skipped')
     environment: ${{ github.event.inputs.environment || 'staging' }}
@@ -260,6 +268,8 @@ jobs:
   smoke-test:
     name: Smoke Test
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     needs: deploy-app
     steps:
       - name: Azure login
@@ -300,6 +310,8 @@ jobs:
   rollback-on-failure:
     name: Rollback on Failure
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     needs: [deploy-app, smoke-test]
     if: failure()
     steps:
