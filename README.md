@@ -513,6 +513,80 @@ The `encrypt_pii()` and `decrypt_pii()` functions accept the encryption key as a
 
 ---
 
+---
+
+## .NET Core API Implementation
+
+A full .NET 9 REST API implementation is provided in the `auth-framework-api/` directory.
+
+### Project Structure
+
+```
+auth-framework-api/
+├── src/
+│   ├── AuthFramework.Api/           # ASP.NET Core Web API (controllers, middleware, Program.cs)
+│   ├── AuthFramework.Core/          # Domain entities, enums, models, constants
+│   ├── AuthFramework.Application/   # Services, interfaces, DTOs
+│   ├── AuthFramework.Infrastructure/# EF Core DbContext, repositories, DI setup
+│   └── AuthFramework.Shared/        # Utilities (UUID v7, TOTP, bcrypt), exceptions, extensions
+├── tests/
+│   ├── AuthFramework.Tests.Unit/    # xUnit unit tests (30 tests)
+│   └── AuthFramework.Tests.Integration/ # Testcontainers integration tests
+└── AuthFramework.sln
+```
+
+### Quick Start
+
+```bash
+# 1. Start PostgreSQL and the API via Docker Compose
+docker compose up -d
+
+# 2. Or run locally (requires PostgreSQL)
+cd auth-framework-api
+dotnet restore
+dotnet run --project src/AuthFramework.Api
+# API available at http://localhost:5000
+# Swagger UI at http://localhost:5000/swagger
+```
+
+### Running Tests
+
+```bash
+cd auth-framework-api
+dotnet test tests/AuthFramework.Tests.Unit
+```
+
+### API Documentation
+
+| Resource | Location |
+|---|---|
+| OpenAPI 3.1 spec | `docs/openapi.json` |
+| API reference | `docs/API.md` |
+| Implementation guide | `docs/IMPLEMENTATION.md` |
+| Security guide | `docs/SECURITY.md` |
+| GDPR compliance | `docs/GDPR.md` |
+| Postman collection | `samples/postman-collection.json` |
+| cURL examples | `samples/curl-examples.sh` |
+| C# examples | `samples/csharp-examples.cs` |
+
+### Key API Endpoints
+
+| Method | Path | Description |
+|---|---|---|
+| POST | `/api/auth/register` | User registration |
+| POST | `/api/auth/login` | Login (returns JWT + optional MFA challenge) |
+| POST | `/api/auth/refresh-token` | Refresh access token |
+| POST | `/api/mfa/enroll` | Enroll MFA device (TOTP, SMS, Email) |
+| POST | `/api/mfa/verify` | Verify MFA challenge |
+| GET | `/api/oauth/authorize` | OAuth 2.0 authorization code flow |
+| POST | `/api/oauth/token` | OAuth 2.0 token endpoint |
+| GET | `/api/sso/providers` | List SSO providers |
+| GET | `/api/users/me` | Get current user profile |
+| GET | `/api/users/me/data-export` | GDPR data export |
+| GET | `/api/admin/audit-logs` | Admin audit log query |
+
+---
+
 ## License
 
 This schema is released under the MIT License. See repository root for details.
