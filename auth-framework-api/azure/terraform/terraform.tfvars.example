@@ -1,0 +1,43 @@
+# Example Terraform variables - copy to terraform.tfvars and fill in values
+# DO NOT commit terraform.tfvars with real secrets to version control
+
+environment   = "dev"
+location      = "eastus2"
+project_name  = "authframework"
+
+# PostgreSQL configuration
+postgresql_sku_name   = "B_Standard_B1ms"
+postgresql_storage_mb = 32768
+postgresql_version    = "16"
+
+# App Service configuration
+app_service_sku_name = "B2"
+
+# Container Registry
+acr_sku = "Standard"
+
+# Key Vault
+key_vault_sku_name = "standard"
+
+# High availability (set to true for production)
+enable_high_availability = false
+
+# Networking
+vnet_address_space = "10.0.0.0/16"
+app_subnet_prefix  = "10.0.1.0/24"
+db_subnet_prefix   = "10.0.2.0/24"
+
+# Monitoring
+alert_email = "your-team@example.com"
+
+# Secrets (use environment variables or Key Vault in production, not this file)
+# db_password     = "your-secure-password-here"
+# jwt_secret_key  = "your-jwt-secret-key-minimum-32-characters"
+# encryption_key  = "your-32-char-encryption-key-here!"
+
+# Additional tags
+tags = {
+  Owner       = "platform-team"
+  CostCenter  = "engineering"
+  Application = "auth-framework"
+}
