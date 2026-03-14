@@ -1,0 +1,609 @@
+{
+  "info": {
+    "name": "AuthFramework API",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Multi-tenant authentication framework API collection for .NET 9"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:5000" },
+    { "key": "tenantId", "value": "00000000-0000-0000-0000-000000000001" },
+    { "key": "accessToken", "value": "" },
+    { "key": "refreshToken", "value": "" },
+    { "key": "clientId", "value": "" },
+    { "key": "clientSecret", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Authentication",
+      "item": [
+        {
+          "name": "Register",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/api/auth/register", "host": ["{{baseUrl}}"], "path": ["api","auth","register"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"user@example.com\",\n  \"password\": \"P@ssw0rd123!\",\n  \"firstName\": \"Jane\",\n  \"lastName\": \"Doe\",\n  \"language\": \"en\",\n  \"timezone\": \"UTC\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const body = pm.response.json();",
+                  "  if (body.accessToken) pm.collectionVariables.set('accessToken', body.accessToken);",
+                  "  if (body.refreshToken) pm.collectionVariables.set('refreshToken', body.refreshToken);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api","auth","login"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"user@example.com\",\n  \"password\": \"P@ssw0rd123!\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/api/auth/logout", "host": ["{{baseUrl}}"], "path": ["api","auth","logout"] }
+          }
+        },
+        {
+          "name": "Refresh Token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const body = pm.response.json();",
+                  "  if (body.accessToken) pm.collectionVariables.set('accessToken', body.accessToken);",
+                  "  if (body.refreshToken) pm.collectionVariables.set('refreshToken', body.refreshToken);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/api/auth/refresh-token", "host": ["{{baseUrl}}"], "path": ["api","auth","refresh-token"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Request Password Reset",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/api/auth/password-reset", "host": ["{{baseUrl}}"], "path": ["api","auth","password-reset"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"user@example.com\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Confirm Password Reset",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/api/auth/password-reset/confirm", "host": ["{{baseUrl}}"], "path": ["api","auth","password-reset","confirm"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"<reset-token>\",\n  \"newPassword\": \"N3wP@ssw0rd!\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Verify Email",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/api/auth/verify-email", "host": ["{{baseUrl}}"], "path": ["api","auth","verify-email"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"<verification-token>\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Get Session",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/api/auth/session", "host": ["{{baseUrl}}"], "path": ["api","auth","session"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "MFA",
+      "item": [
+        {
+          "name": "Enroll TOTP",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/api/mfa/enroll", "host": ["{{baseUrl}}"], "path": ["api","mfa","enroll"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"methodType\": \"totp\",\n  \"deviceName\": \"My Authenticator\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Verify MFA",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/api/mfa/verify", "host": ["{{baseUrl}}"], "path": ["api","mfa","verify"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"challengeId\": \"<challenge-id>\",\n  \"code\": \"123456\"\n}"
+            }
+          }
+        },
+        {
+          "name": "List MFA Devices",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/api/mfa/devices", "host": ["{{baseUrl}}"], "path": ["api","mfa","devices"] }
+          }
+        },
+        {
+          "name": "Remove MFA Device",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/api/mfa/devices/<device-id>", "host": ["{{baseUrl}}"], "path": ["api","mfa","devices","<device-id>"] }
+          }
+        },
+        {
+          "name": "Get Recovery Codes",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/api/mfa/recovery-codes", "host": ["{{baseUrl}}"], "path": ["api","mfa","recovery-codes"] }
+          }
+        },
+        {
+          "name": "Regenerate Recovery Codes",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/api/mfa/recovery-codes/regenerate", "host": ["{{baseUrl}}"], "path": ["api","mfa","recovery-codes","regenerate"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "OAuth",
+      "item": [
+        {
+          "name": "Create Application",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  const body = pm.response.json();",
+                  "  if (body.clientId) pm.collectionVariables.set('clientId', body.clientId);",
+                  "  if (body.clientSecret) pm.collectionVariables.set('clientSecret', body.clientSecret);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/api/oauth/applications", "host": ["{{baseUrl}}"], "path": ["api","oauth","applications"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"My App\",\n  \"applicationType\": \"web\",\n  \"redirectUris\": [\"https://myapp.example.com/callback\"],\n  \"allowedScopes\": [\"read:profile\", \"write:profile\"]\n}"
+            }
+          }
+        },
+        {
+          "name": "List Applications",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/api/oauth/applications", "host": ["{{baseUrl}}"], "path": ["api","oauth","applications"] }
+          }
+        },
+        {
+          "name": "Authorize",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "X-Tenant-ID", "value": "{{tenantId}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/oauth/authorize?client_id={{clientId}}&redirect_uri=https://myapp.example.com/callback&response_type=code&scope=read:profile&state=random_state",
+              "host": ["{{baseUrl}}"],
+              "path": ["api","oauth","authorize"],
+              "query": [
+                { "key": "client_id", "value": "{{clientId}}" },
+                { "key": "redirect_uri", "value": "https://myapp.example.com/callback" },
+                { "key": "response_type", "value": "code" },
+                { "key": "scope", "value": "read:profile" },
+                { "key": "state", "value": "random_state" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Token Exchange",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/api/oauth/token", "host": ["{{baseUrl}}"], "path": ["api","oauth","token"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"grantType\": \"authorization_code\",\n  \"code\": \"<authorization-code>\",\n  \"clientId\": \"{{clientId}}\",\n  \"clientSecret\": \"{{clientSecret}}\",\n  \"redirectUri\": \"https://myapp.example.com/callback\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Revoke Token",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/api/oauth/revoke", "host": ["{{baseUrl}}"], "path": ["api","oauth","revoke"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"<access-or-refresh-token>\",\n  \"clientId\": \"{{clientId}}\",\n  \"clientSecret\": \"{{clientSecret}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Introspect Token",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/api/oauth/introspect", "host": ["{{baseUrl}}"], "path": ["api","oauth","introspect"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"<token-to-inspect>\",\n  \"clientId\": \"{{clientId}}\",\n  \"clientSecret\": \"{{clientSecret}}\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "SSO",
+      "item": [
+        {
+          "name": "List SSO Providers",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "X-Tenant-ID", "value": "{{tenantId}}" }],
+            "url": { "raw": "{{baseUrl}}/api/sso/providers", "host": ["{{baseUrl}}"], "path": ["api","sso","providers"] }
+          }
+        },
+        {
+          "name": "Initiate SSO Login",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "X-Tenant-ID", "value": "{{tenantId}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/sso/login/google?redirectUri=https://myapp.example.com/dashboard",
+              "host": ["{{baseUrl}}"],
+              "path": ["api","sso","login","google"],
+              "query": [{ "key": "redirectUri", "value": "https://myapp.example.com/dashboard" }]
+            }
+          }
+        },
+        {
+          "name": "SSO Callback",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/api/sso/callback", "host": ["{{baseUrl}}"], "path": ["api","sso","callback"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"<oauth-code>\",\n  \"state\": \"<state>\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "User Profile",
+      "item": [
+        {
+          "name": "Get Profile",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/api/users/me", "host": ["{{baseUrl}}"], "path": ["api","users","me"] }
+          }
+        },
+        {
+          "name": "Update Profile",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/api/users/me", "host": ["{{baseUrl}}"], "path": ["api","users","me"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firstName\": \"Jane\",\n  \"lastName\": \"Smith\",\n  \"displayName\": \"jsmith\"\n}"
+            }
+          }
+        },
+        {
+          "name": "List Sessions",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/api/users/me/sessions", "host": ["{{baseUrl}}"], "path": ["api","users","me","sessions"] }
+          }
+        },
+        {
+          "name": "Revoke Session",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/api/users/me/sessions/<session-id>", "host": ["{{baseUrl}}"], "path": ["api","users","me","sessions","<session-id>"] }
+          }
+        },
+        {
+          "name": "Get Preferences",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/api/users/me/preferences", "host": ["{{baseUrl}}"], "path": ["api","users","me","preferences"] }
+          }
+        },
+        {
+          "name": "Update Preferences",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/api/users/me/preferences", "host": ["{{baseUrl}}"], "path": ["api","users","me","preferences"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"language\": \"en-GB\",\n  \"timezone\": \"Europe/London\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Export Data (GDPR)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/api/users/me/data-export", "host": ["{{baseUrl}}"], "path": ["api","users","me","data-export"] }
+          }
+        },
+        {
+          "name": "Request Account Deletion (GDPR)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/api/users/me/delete", "host": ["{{baseUrl}}"], "path": ["api","users","me","delete"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"password\": \"P@ssw0rd123!\",\n  \"reason\": \"No longer needed\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin",
+      "item": [
+        {
+          "name": "List Users",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/users?page=1&pageSize=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["api","admin","users"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "pageSize", "value": "20" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Create User",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/api/admin/users", "host": ["{{baseUrl}}"], "path": ["api","admin","users"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"newuser@example.com\",\n  \"firstName\": \"New\",\n  \"lastName\": \"User\",\n  \"password\": \"TempP@ss123!\",\n  \"role\": \"user\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Get User",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/api/admin/users/<user-id>", "host": ["{{baseUrl}}"], "path": ["api","admin","users","<user-id>"] }
+          }
+        },
+        {
+          "name": "Update User",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/api/admin/users/<user-id>", "host": ["{{baseUrl}}"], "path": ["api","admin","users","<user-id>"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"suspended\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Delete User",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/api/admin/users/<user-id>", "host": ["{{baseUrl}}"], "path": ["api","admin","users","<user-id>"] }
+          }
+        },
+        {
+          "name": "Get Audit Logs",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/audit-logs?page=1&pageSize=50",
+              "host": ["{{baseUrl}}"],
+              "path": ["api","admin","audit-logs"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "pageSize", "value": "50" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Security Events",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/api/admin/security-events", "host": ["{{baseUrl}}"], "path": ["api","admin","security-events"] }
+          }
+        }
+      ]
+    }
+  ]
+}

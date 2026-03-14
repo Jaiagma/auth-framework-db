@@ -1,0 +1,1104 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "AuthFramework API",
+    "version": "1.0.0",
+    "description": "A multi-tenant .NET 9 authentication framework API providing authentication, MFA, OAuth 2.0, SSO, user management, and admin capabilities."
+  },
+  "servers": [
+    { "url": "https://api.example.com", "description": "Production" },
+    { "url": "http://localhost:5000", "description": "Local development" }
+  ],
+  "security": [{ "BearerAuth": [] }],
+  "tags": [
+    { "name": "Authentication" },
+    { "name": "MFA" },
+    { "name": "OAuth" },
+    { "name": "SSO" },
+    { "name": "Users" },
+    { "name": "Admin" }
+  ],
+  "paths": {
+    "/api/auth/register": {
+      "post": {
+        "operationId": "registerUser",
+        "tags": ["Authentication"],
+        "summary": "Register a new user",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["email", "password"],
+                "properties": {
+                  "email": { "type": "string", "format": "email" },
+                  "password": { "type": "string", "minLength": 8 },
+                  "firstName": { "type": "string" },
+                  "lastName": { "type": "string" },
+                  "tenantId": { "type": "string", "format": "uuid" },
+                  "language": { "type": "string", "default": "en" },
+                  "timezone": { "type": "string", "default": "UTC" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "User created", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UserDto" } } } },
+          "400": { "description": "Validation error", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ValidationProblemDetails" } } } },
+          "409": { "description": "User already exists", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ProblemDetails" } } } }
+        }
+      }
+    },
+    "/api/auth/login": {
+      "post": {
+        "operationId": "loginUser",
+        "tags": ["Authentication"],
+        "summary": "Authenticate a user",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["email", "password", "tenantId"],
+                "properties": {
+                  "email": { "type": "string", "format": "email" },
+                  "password": { "type": "string" },
+                  "tenantId": { "type": "string", "format": "uuid" },
+                  "deviceInfo": {
+                    "type": "object",
+                    "properties": {
+                      "userAgent": { "type": "string" },
+                      "ipAddress": { "type": "string" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Login successful", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/LoginResponse" } } } },
+          "401": { "$ref": "#/components/responses/401Unauthorized" },
+          "423": { "description": "Account locked", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ProblemDetails" } } } }
+        }
+      }
+    },
+    "/api/auth/logout": {
+      "post": {
+        "operationId": "logoutUser",
+        "tags": ["Authentication"],
+        "summary": "Logout current user",
+        "security": [{ "BearerAuth": [] }],
+        "responses": {
+          "204": { "description": "Logged out" },
+          "401": { "$ref": "#/components/responses/401Unauthorized" }
+        }
+      }
+    },
+    "/api/auth/refresh-token": {
+      "post": {
+        "operationId": "refreshToken",
+        "tags": ["Authentication"],
+        "summary": "Refresh access token",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["refreshToken", "tenantId"],
+                "properties": {
+                  "refreshToken": { "type": "string" },
+                  "tenantId": { "type": "string", "format": "uuid" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "New tokens", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/LoginResponse" } } } },
+          "401": { "$ref": "#/components/responses/401Unauthorized" }
+        }
+      }
+    },
+    "/api/auth/password-reset": {
+      "post": {
+        "operationId": "requestPasswordReset",
+        "tags": ["Authentication"],
+        "summary": "Request password reset",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["email", "tenantId"],
+                "properties": {
+                  "email": { "type": "string", "format": "email" },
+                  "tenantId": { "type": "string", "format": "uuid" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": { "description": "Always 204 to prevent enumeration" }
+        }
+      }
+    },
+    "/api/auth/password-reset/confirm": {
+      "post": {
+        "operationId": "confirmPasswordReset",
+        "tags": ["Authentication"],
+        "summary": "Confirm password reset",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["token", "newPassword", "tenantId"],
+                "properties": {
+                  "token": { "type": "string" },
+                  "newPassword": { "type": "string", "minLength": 8 },
+                  "tenantId": { "type": "string", "format": "uuid" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": { "description": "Password reset successful" },
+          "400": { "description": "Invalid or expired token", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ProblemDetails" } } } }
+        }
+      }
+    },
+    "/api/auth/verify-email": {
+      "post": {
+        "operationId": "verifyEmail",
+        "tags": ["Authentication"],
+        "summary": "Verify email address",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["token", "tenantId"],
+                "properties": {
+                  "token": { "type": "string" },
+                  "tenantId": { "type": "string", "format": "uuid" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": { "description": "Email verified" },
+          "400": { "description": "Invalid or expired token", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ProblemDetails" } } } }
+        }
+      }
+    },
+    "/api/auth/session": {
+      "get": {
+        "operationId": "getSession",
+        "tags": ["Authentication"],
+        "summary": "Get current session",
+        "security": [{ "BearerAuth": [] }],
+        "responses": {
+          "200": { "description": "Current session", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SessionDto" } } } },
+          "401": { "$ref": "#/components/responses/401Unauthorized" }
+        }
+      }
+    },
+    "/api/mfa/enroll": {
+      "post": {
+        "operationId": "enrollMfa",
+        "tags": ["MFA"],
+        "summary": "Enroll MFA device",
+        "security": [{ "BearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["methodType"],
+                "properties": {
+                  "methodType": { "type": "string", "enum": ["totp", "sms", "email", "webauthn"] },
+                  "phoneNumber": { "type": "string" },
+                  "email": { "type": "string", "format": "email" },
+                  "deviceName": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "MFA enrollment initiated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "deviceId": { "type": "string", "format": "uuid" },
+                    "secret": { "type": "string" },
+                    "qrCodeUri": { "type": "string" },
+                    "method": { "type": "string" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/401Unauthorized" }
+        }
+      }
+    },
+    "/api/mfa/verify": {
+      "post": {
+        "operationId": "verifyMfa",
+        "tags": ["MFA"],
+        "summary": "Verify MFA code",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["challengeId", "code"],
+                "properties": {
+                  "challengeId": { "type": "string" },
+                  "code": { "type": "string" },
+                  "deviceId": { "type": "string", "format": "uuid" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "MFA verified", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/LoginResponse" } } } },
+          "400": { "description": "Invalid code", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ProblemDetails" } } } }
+        }
+      }
+    },
+    "/api/mfa/devices": {
+      "get": {
+        "operationId": "listMfaDevices",
+        "tags": ["MFA"],
+        "summary": "List MFA devices",
+        "security": [{ "BearerAuth": [] }],
+        "responses": {
+          "200": { "description": "MFA devices", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/MfaDeviceDto" } } } } },
+          "401": { "$ref": "#/components/responses/401Unauthorized" }
+        }
+      }
+    },
+    "/api/mfa/devices/{deviceId}": {
+      "delete": {
+        "operationId": "deleteMfaDevice",
+        "tags": ["MFA"],
+        "summary": "Delete MFA device",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [
+          { "name": "deviceId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "204": { "description": "Device deleted" },
+          "401": { "$ref": "#/components/responses/401Unauthorized" },
+          "404": { "$ref": "#/components/responses/404NotFound" }
+        }
+      }
+    },
+    "/api/mfa/recovery-codes": {
+      "get": {
+        "operationId": "getRecoveryCodes",
+        "tags": ["MFA"],
+        "summary": "Get MFA recovery codes",
+        "security": [{ "BearerAuth": [] }],
+        "responses": {
+          "200": { "description": "Recovery codes", "content": { "application/json": { "schema": { "type": "array", "items": { "type": "string" } } } } },
+          "401": { "$ref": "#/components/responses/401Unauthorized" }
+        }
+      }
+    },
+    "/api/mfa/recovery-codes/regenerate": {
+      "post": {
+        "operationId": "regenerateRecoveryCodes",
+        "tags": ["MFA"],
+        "summary": "Regenerate MFA recovery codes",
+        "security": [{ "BearerAuth": [] }],
+        "responses": {
+          "200": { "description": "New recovery codes (10)", "content": { "application/json": { "schema": { "type": "array", "items": { "type": "string" }, "minItems": 10, "maxItems": 10 } } } },
+          "401": { "$ref": "#/components/responses/401Unauthorized" }
+        }
+      }
+    },
+    "/api/oauth/applications": {
+      "post": {
+        "operationId": "createOAuthApplication",
+        "tags": ["OAuth"],
+        "summary": "Create OAuth application",
+        "security": [{ "BearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["name", "applicationType", "redirectUris"],
+                "properties": {
+                  "name": { "type": "string" },
+                  "applicationType": { "type": "string", "enum": ["web", "native", "spa", "service"] },
+                  "redirectUris": { "type": "array", "items": { "type": "string", "format": "uri" } },
+                  "allowedScopes": { "type": "array", "items": { "type": "string" } }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Application created (clientSecret shown once)", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/OAuthApplicationDto" } } } },
+          "401": { "$ref": "#/components/responses/401Unauthorized" }
+        }
+      },
+      "get": {
+        "operationId": "listOAuthApplications",
+        "tags": ["OAuth"],
+        "summary": "List OAuth applications",
+        "security": [{ "BearerAuth": [] }],
+        "responses": {
+          "200": { "description": "Applications", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/OAuthApplicationDto" } } } } },
+          "401": { "$ref": "#/components/responses/401Unauthorized" }
+        }
+      }
+    },
+    "/api/oauth/authorize": {
+      "get": {
+        "operationId": "oauthAuthorize",
+        "tags": ["OAuth"],
+        "summary": "OAuth 2.0 authorization endpoint",
+        "security": [],
+        "parameters": [
+          { "name": "client_id", "in": "query", "required": true, "schema": { "type": "string" } },
+          { "name": "redirect_uri", "in": "query", "required": true, "schema": { "type": "string", "format": "uri" } },
+          { "name": "scope", "in": "query", "schema": { "type": "string" } },
+          { "name": "state", "in": "query", "required": true, "schema": { "type": "string" } },
+          { "name": "response_type", "in": "query", "required": true, "schema": { "type": "string", "enum": ["code"] } },
+          { "name": "code_challenge", "in": "query", "schema": { "type": "string" } },
+          { "name": "code_challenge_method", "in": "query", "schema": { "type": "string", "enum": ["S256", "plain"] } }
+        ],
+        "responses": {
+          "302": { "description": "Redirect to redirect_uri with authorization code" }
+        }
+      }
+    },
+    "/api/oauth/token": {
+      "post": {
+        "operationId": "oauthToken",
+        "tags": ["OAuth"],
+        "summary": "OAuth 2.0 token endpoint",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "type": "object",
+                "required": ["grant_type"],
+                "properties": {
+                  "grant_type": { "type": "string", "enum": ["authorization_code", "refresh_token", "client_credentials"] },
+                  "code": { "type": "string" },
+                  "refresh_token": { "type": "string" },
+                  "client_id": { "type": "string" },
+                  "client_secret": { "type": "string" },
+                  "redirect_uri": { "type": "string", "format": "uri" },
+                  "code_verifier": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Token response", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TokenResponse" } } } },
+          "401": { "$ref": "#/components/responses/401Unauthorized" }
+        }
+      }
+    },
+    "/api/oauth/revoke": {
+      "post": {
+        "operationId": "oauthRevoke",
+        "tags": ["OAuth"],
+        "summary": "Revoke token",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "type": "object",
+                "required": ["token"],
+                "properties": {
+                  "token": { "type": "string" },
+                  "token_type_hint": { "type": "string", "enum": ["access_token", "refresh_token"] },
+                  "client_id": { "type": "string" },
+                  "client_secret": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Token revoked" }
+        }
+      }
+    },
+    "/api/oauth/introspect": {
+      "post": {
+        "operationId": "oauthIntrospect",
+        "tags": ["OAuth"],
+        "summary": "Introspect token",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "type": "object",
+                "required": ["token"],
+                "properties": {
+                  "token": { "type": "string" },
+                  "token_type_hint": { "type": "string" },
+                  "client_id": { "type": "string" },
+                  "client_secret": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Introspection result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "active": { "type": "boolean" },
+                    "sub": { "type": "string" },
+                    "exp": { "type": "integer" },
+                    "scope": { "type": "string" },
+                    "client_id": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sso/providers": {
+      "get": {
+        "operationId": "listSsoProviders",
+        "tags": ["SSO"],
+        "summary": "List SSO providers",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "SSO providers",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": { "type": "string", "format": "uuid" },
+                      "name": { "type": "string" },
+                      "providerType": { "type": "string", "enum": ["saml", "oidc", "oauth2"] },
+                      "loginUrl": { "type": "string", "format": "uri" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sso/login/{provider}": {
+      "get": {
+        "operationId": "ssoLogin",
+        "tags": ["SSO"],
+        "summary": "Initiate SSO login",
+        "security": [],
+        "parameters": [
+          { "name": "provider", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "redirectUri", "in": "query", "schema": { "type": "string", "format": "uri" } }
+        ],
+        "responses": {
+          "302": { "description": "Redirect to Identity Provider" }
+        }
+      }
+    },
+    "/api/sso/callback": {
+      "post": {
+        "operationId": "ssoCallback",
+        "tags": ["SSO"],
+        "summary": "SSO callback",
+        "security": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "samlResponse": { "type": "string" },
+                  "code": { "type": "string" },
+                  "state": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Login response", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/LoginResponse" } } } },
+          "302": { "description": "Redirect after SSO" }
+        }
+      }
+    },
+    "/api/users/me": {
+      "get": {
+        "operationId": "getMyProfile",
+        "tags": ["Users"],
+        "summary": "Get current user profile",
+        "security": [{ "BearerAuth": [] }],
+        "responses": {
+          "200": { "description": "User profile", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UserProfileDto" } } } },
+          "401": { "$ref": "#/components/responses/401Unauthorized" }
+        }
+      },
+      "patch": {
+        "operationId": "updateMyProfile",
+        "tags": ["Users"],
+        "summary": "Update current user profile",
+        "security": [{ "BearerAuth": [] }],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "firstName": { "type": "string" },
+                  "lastName": { "type": "string" },
+                  "displayName": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Updated profile", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UserProfileDto" } } } },
+          "401": { "$ref": "#/components/responses/401Unauthorized" }
+        }
+      }
+    },
+    "/api/users/me/sessions": {
+      "get": {
+        "operationId": "listMySessions",
+        "tags": ["Users"],
+        "summary": "List user sessions",
+        "security": [{ "BearerAuth": [] }],
+        "responses": {
+          "200": { "description": "Sessions", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/SessionDto" } } } } },
+          "401": { "$ref": "#/components/responses/401Unauthorized" }
+        }
+      }
+    },
+    "/api/users/me/sessions/{sessionId}": {
+      "delete": {
+        "operationId": "revokeMySession",
+        "tags": ["Users"],
+        "summary": "Revoke a session",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [
+          { "name": "sessionId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "204": { "description": "Session revoked" },
+          "401": { "$ref": "#/components/responses/401Unauthorized" }
+        }
+      }
+    },
+    "/api/users/me/preferences": {
+      "get": {
+        "operationId": "getMyPreferences",
+        "tags": ["Users"],
+        "summary": "Get user preferences",
+        "security": [{ "BearerAuth": [] }],
+        "responses": {
+          "200": {
+            "description": "User preferences",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "language": { "type": "string" },
+                    "timezone": { "type": "string" },
+                    "emailNotifications": { "type": "boolean" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/401Unauthorized" }
+        }
+      },
+      "patch": {
+        "operationId": "updateMyPreferences",
+        "tags": ["Users"],
+        "summary": "Update user preferences",
+        "security": [{ "BearerAuth": [] }],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "language": { "type": "string" },
+                  "timezone": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Updated preferences" },
+          "401": { "$ref": "#/components/responses/401Unauthorized" }
+        }
+      }
+    },
+    "/api/users/me/data-export": {
+      "get": {
+        "operationId": "exportMyData",
+        "tags": ["Users"],
+        "summary": "GDPR data export",
+        "security": [{ "BearerAuth": [] }],
+        "responses": {
+          "200": { "description": "Full user data export", "content": { "application/json": { "schema": { "type": "object" } } } },
+          "401": { "$ref": "#/components/responses/401Unauthorized" }
+        }
+      }
+    },
+    "/api/users/me/delete": {
+      "post": {
+        "operationId": "deleteMyAccount",
+        "tags": ["Users"],
+        "summary": "Request account deletion",
+        "security": [{ "BearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["password"],
+                "properties": {
+                  "password": { "type": "string" },
+                  "reason": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": { "description": "Deletion scheduled" },
+          "401": { "$ref": "#/components/responses/401Unauthorized" }
+        }
+      }
+    },
+    "/api/admin/users": {
+      "get": {
+        "operationId": "adminListUsers",
+        "tags": ["Admin"],
+        "summary": "List users (admin)",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "pageSize", "in": "query", "schema": { "type": "integer", "default": 20 } },
+          { "name": "search", "in": "query", "schema": { "type": "string" } },
+          { "name": "status", "in": "query", "schema": { "type": "string", "enum": ["active", "inactive", "locked", "pending"] } }
+        ],
+        "responses": {
+          "200": { "description": "Paged users", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PagedResultUserDto" } } } },
+          "401": { "$ref": "#/components/responses/401Unauthorized" },
+          "403": { "$ref": "#/components/responses/403Forbidden" }
+        }
+      },
+      "post": {
+        "operationId": "adminCreateUser",
+        "tags": ["Admin"],
+        "summary": "Create user (admin)",
+        "security": [{ "BearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["email", "firstName", "lastName", "role"],
+                "properties": {
+                  "email": { "type": "string", "format": "email" },
+                  "firstName": { "type": "string" },
+                  "lastName": { "type": "string" },
+                  "role": { "type": "string" },
+                  "password": { "type": "string", "minLength": 8 }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "User created", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UserDto" } } } },
+          "401": { "$ref": "#/components/responses/401Unauthorized" },
+          "403": { "$ref": "#/components/responses/403Forbidden" }
+        }
+      }
+    },
+    "/api/admin/users/{userId}": {
+      "get": {
+        "operationId": "adminGetUser",
+        "tags": ["Admin"],
+        "summary": "Get user (admin)",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [
+          { "name": "userId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "200": { "description": "User", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UserDto" } } } },
+          "401": { "$ref": "#/components/responses/401Unauthorized" },
+          "403": { "$ref": "#/components/responses/403Forbidden" },
+          "404": { "$ref": "#/components/responses/404NotFound" }
+        }
+      },
+      "patch": {
+        "operationId": "adminUpdateUser",
+        "tags": ["Admin"],
+        "summary": "Update user (admin)",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [
+          { "name": "userId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "firstName": { "type": "string" },
+                  "lastName": { "type": "string" },
+                  "role": { "type": "string" },
+                  "status": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Updated user", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UserDto" } } } },
+          "401": { "$ref": "#/components/responses/401Unauthorized" },
+          "403": { "$ref": "#/components/responses/403Forbidden" },
+          "404": { "$ref": "#/components/responses/404NotFound" }
+        }
+      },
+      "delete": {
+        "operationId": "adminDeleteUser",
+        "tags": ["Admin"],
+        "summary": "Delete user (admin)",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [
+          { "name": "userId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "204": { "description": "User deleted" },
+          "401": { "$ref": "#/components/responses/401Unauthorized" },
+          "403": { "$ref": "#/components/responses/403Forbidden" },
+          "404": { "$ref": "#/components/responses/404NotFound" }
+        }
+      }
+    },
+    "/api/admin/audit-logs": {
+      "get": {
+        "operationId": "adminGetAuditLogs",
+        "tags": ["Admin"],
+        "summary": "Get audit logs",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [
+          { "name": "userId", "in": "query", "schema": { "type": "string", "format": "uuid" } },
+          { "name": "eventType", "in": "query", "schema": { "type": "string" } },
+          { "name": "from", "in": "query", "schema": { "type": "string", "format": "date-time" } },
+          { "name": "to", "in": "query", "schema": { "type": "string", "format": "date-time" } },
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "pageSize", "in": "query", "schema": { "type": "integer", "default": 20 } }
+        ],
+        "responses": {
+          "200": { "description": "Paged audit logs", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PagedResultAuditLogDto" } } } },
+          "401": { "$ref": "#/components/responses/401Unauthorized" },
+          "403": { "$ref": "#/components/responses/403Forbidden" }
+        }
+      }
+    },
+    "/api/admin/security-events": {
+      "get": {
+        "operationId": "adminGetSecurityEvents",
+        "tags": ["Admin"],
+        "summary": "Get security events",
+        "security": [{ "BearerAuth": [] }],
+        "responses": {
+          "200": {
+            "description": "Security events",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": { "type": "string", "format": "uuid" },
+                      "eventType": { "type": "string" },
+                      "userId": { "type": "string", "format": "uuid" },
+                      "ipAddress": { "type": "string" },
+                      "severity": { "type": "string", "enum": ["low", "medium", "high", "critical"] },
+                      "createdAt": { "type": "string", "format": "date-time" },
+                      "details": { "type": "object" }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/401Unauthorized" },
+          "403": { "$ref": "#/components/responses/403Forbidden" }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      },
+      "OAuth2": {
+        "type": "oauth2",
+        "flows": {
+          "authorizationCode": {
+            "authorizationUrl": "/api/oauth/authorize",
+            "tokenUrl": "/api/oauth/token",
+            "scopes": {
+              "read:profile": "Read user profile",
+              "write:profile": "Update user profile",
+              "read:sessions": "Read user sessions",
+              "write:sessions": "Manage user sessions",
+              "read:mfa": "Read MFA devices",
+              "write:mfa": "Manage MFA devices",
+              "admin": "Full administrative access"
+            }
+          }
+        }
+      }
+    },
+    "parameters": {
+      "X-Tenant-ID": {
+        "name": "X-Tenant-ID",
+        "in": "header",
+        "required": true,
+        "schema": { "type": "string", "format": "uuid" },
+        "description": "Tenant identifier"
+      },
+      "X-Correlation-ID": {
+        "name": "X-Correlation-ID",
+        "in": "header",
+        "required": false,
+        "schema": { "type": "string" },
+        "description": "Correlation identifier for request tracing"
+      }
+    },
+    "responses": {
+      "401Unauthorized": {
+        "description": "Unauthorized",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ProblemDetails" } } }
+      },
+      "403Forbidden": {
+        "description": "Forbidden",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ProblemDetails" } } }
+      },
+      "404NotFound": {
+        "description": "Not Found",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ProblemDetails" } } }
+      },
+      "429TooManyRequests": {
+        "description": "Too Many Requests",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ProblemDetails" } } }
+      }
+    },
+    "schemas": {
+      "UserDto": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "email": { "type": "string", "format": "email" },
+          "firstName": { "type": "string" },
+          "lastName": { "type": "string" },
+          "displayName": { "type": "string" },
+          "role": { "type": "string" },
+          "status": { "type": "string", "enum": ["active", "inactive", "locked", "pending"] },
+          "isEmailVerified": { "type": "boolean" },
+          "tenantId": { "type": "string", "format": "uuid" },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "UserProfileDto": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "email": { "type": "string", "format": "email" },
+          "firstName": { "type": "string" },
+          "lastName": { "type": "string" },
+          "displayName": { "type": "string" },
+          "avatarUrl": { "type": "string", "format": "uri" },
+          "locale": { "type": "string" },
+          "timezone": { "type": "string" },
+          "isEmailVerified": { "type": "boolean" },
+          "createdAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "LoginResponse": {
+        "type": "object",
+        "properties": {
+          "accessToken": { "type": "string" },
+          "refreshToken": { "type": "string" },
+          "expiresIn": { "type": "integer" },
+          "tokenType": { "type": "string", "default": "Bearer" },
+          "mfaRequired": { "type": "boolean" },
+          "mfaChallengeId": { "type": "string" }
+        }
+      },
+      "TokenResponse": {
+        "type": "object",
+        "properties": {
+          "access_token": { "type": "string" },
+          "token_type": { "type": "string" },
+          "expires_in": { "type": "integer" },
+          "refresh_token": { "type": "string" },
+          "scope": { "type": "string" }
+        }
+      },
+      "MfaDeviceDto": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "name": { "type": "string" },
+          "methodType": { "type": "string", "enum": ["totp", "sms", "email", "webauthn"] },
+          "isVerified": { "type": "boolean" },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "lastUsedAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "OAuthApplicationDto": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "name": { "type": "string" },
+          "clientId": { "type": "string" },
+          "clientSecret": { "type": "string", "description": "Only returned on creation" },
+          "applicationType": { "type": "string" },
+          "redirectUris": { "type": "array", "items": { "type": "string" } },
+          "allowedScopes": { "type": "array", "items": { "type": "string" } },
+          "createdAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "SessionDto": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "userId": { "type": "string", "format": "uuid" },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "expiresAt": { "type": "string", "format": "date-time" },
+          "ipAddress": { "type": "string" },
+          "userAgent": { "type": "string" },
+          "isCurrent": { "type": "boolean" }
+        }
+      },
+      "AuditLogDto": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "userId": { "type": "string", "format": "uuid" },
+          "eventType": { "type": "string" },
+          "ipAddress": { "type": "string" },
+          "userAgent": { "type": "string" },
+          "details": { "type": "object" },
+          "createdAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "ProblemDetails": {
+        "type": "object",
+        "properties": {
+          "type": { "type": "string" },
+          "title": { "type": "string" },
+          "status": { "type": "integer" },
+          "detail": { "type": "string" },
+          "instance": { "type": "string" }
+        }
+      },
+      "ValidationProblemDetails": {
+        "allOf": [
+          { "$ref": "#/components/schemas/ProblemDetails" },
+          {
+            "type": "object",
+            "properties": {
+              "errors": {
+                "type": "object",
+                "additionalProperties": { "type": "array", "items": { "type": "string" } }
+              }
+            }
+          }
+        ]
+      },
+      "PagedResultUserDto": {
+        "type": "object",
+        "properties": {
+          "items": { "type": "array", "items": { "$ref": "#/components/schemas/UserDto" } },
+          "totalCount": { "type": "integer" },
+          "page": { "type": "integer" },
+          "pageSize": { "type": "integer" },
+          "totalPages": { "type": "integer" }
+        }
+      },
+      "PagedResultAuditLogDto": {
+        "type": "object",
+        "properties": {
+          "items": { "type": "array", "items": { "$ref": "#/components/schemas/AuditLogDto" } },
+          "totalCount": { "type": "integer" },
+          "page": { "type": "integer" },
+          "pageSize": { "type": "integer" },
+          "totalPages": { "type": "integer" }
+        }
+      }
+    }
+  }
+}

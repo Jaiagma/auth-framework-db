@@ -1,0 +1,88 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: auth_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: authuser
+      POSTGRES_PASSWORD: authpassword
+      POSTGRES_DB: authdb
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./extensions.sql:/docker-entrypoint-initdb.d/01_extensions.sql:ro
+      - ./enums.sql:/docker-entrypoint-initdb.d/02_enums.sql:ro
+      - ./schema.sql:/docker-entrypoint-initdb.d/03_schema.sql:ro
+      - ./functions.sql:/docker-entrypoint-initdb.d/04_functions.sql:ro
+      - ./triggers.sql:/docker-entrypoint-initdb.d/05_triggers.sql:ro
+      - ./indexes.sql:/docker-entrypoint-initdb.d/06_indexes.sql:ro
+      - ./rls_policies.sql:/docker-entrypoint-initdb.d/07_rls_policies.sql:ro
+      - ./seed_data.sql:/docker-entrypoint-initdb.d/08_seed_data.sql:ro
+    ports:
+      - "5432:5432"
+    networks:
+      - auth-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U authuser -d authdb"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  api:
+    build:
+      context: ./auth-framework-api
+      dockerfile: Dockerfile
+    container_name: auth_api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_URLS: http://+:5000
+      ConnectionStrings__DefaultConnection: >-
+        Host=postgres;Port=5432;Database=authdb;
+        Username=authuser;Password=authpassword;
+        Include Error Detail=true
+      Jwt__Issuer: http://localhost:5000
+      Jwt__Audience: http://localhost:5000
+      Jwt__Algorithm: HS256
+      Jwt__SecretKey: dev-only-secret-key-minimum-32-chars!!
+      Jwt__AccessTokenExpiryMinutes: "15"
+      Jwt__RefreshTokenExpiryDays: "30"
+      Encryption__MasterKeyBase64: REPLACE_WITH_BASE64_32_BYTE_KEY_FOR_DEV
+      Email__Provider: console
+      Email__FromAddress: noreply@localhost
+    ports:
+      - "5000:5000"
+    networks:
+      - auth-net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:5000/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  adminer:
+    image: adminer:latest
+    container_name: auth_adminer
+    restart: unless-stopped
+    depends_on:
+      - postgres
+    ports:
+      - "8080:8080"
+    environment:
+      ADMINER_DEFAULT_SERVER: postgres
+      ADMINER_DESIGN: pepa-linha-dark
+    networks:
+      - auth-net
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  auth-net:
+    driver: bridge
