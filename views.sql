@@ -1,290 +1,322 @@
--- =============================================================================
+-- ============================================================
 -- views.sql
--- Common query views for the multi-tenant authentication framework.
--- All views respect RLS policies that are active on the underlying tables.
--- =============================================================================
+-- Database views for common queries in the multi-tenant
+-- authentication framework.
+--
+-- Prerequisites: enums.sql + schema.sql must be run first.
+-- ============================================================
 
--- ---------------------------------------------------------------------------
--- v_active_users
--- Users that are active and not soft-deleted.
--- ---------------------------------------------------------------------------
-CREATE OR REPLACE VIEW v_active_users AS
+-- ────────────────────────────────────────────────────────────
+-- 1. v_active_users
+--    Active, non-deleted users with their tenant slug.
+-- ────────────────────────────────────────────────────────────
+CREATE VIEW v_active_users AS
 SELECT
     u.id,
     u.tenant_id,
-    u.display_name,
+    t.slug          AS tenant_slug,
+    t.name          AS tenant_name,
+    u.username,
+    u.email_hash,
     u.status,
-    u.role,
     u.email_verified,
     u.phone_verified,
-    u.language_code,
-    u.timezone,
+    u.mfa_enabled,
     u.last_login_at,
-    u.failed_login_attempts,
-    u.gdpr_consent_given,
-    u.created_at,
-    u.updated_at
+    u.last_login_ip,
+    u.failed_login_count,
+    u.created_at
 FROM users u
+JOIN tenants t ON t.id = u.tenant_id
 WHERE u.deleted_at IS NULL
   AND u.status     = 'active';
 
 COMMENT ON VIEW v_active_users IS
-    'Active, non-deleted users across all tenants (filtered further by RLS).';
+    'Active, non-deleted users joined with their tenant. '
+    'Does NOT expose encrypted PII columns.';
 
--- ---------------------------------------------------------------------------
--- v_user_sessions
--- Active sessions enriched with basic user info.
--- ---------------------------------------------------------------------------
-CREATE OR REPLACE VIEW v_user_sessions AS
+-- ────────────────────────────────────────────────────────────
+-- 2. v_user_mfa_status
+--    Per-user MFA summary: enrolled methods and device count.
+-- ────────────────────────────────────────────────────────────
+CREATE VIEW v_user_mfa_status AS
 SELECT
-    s.id              AS session_id,
-    s.tenant_id,
-    s.user_id,
-    u.display_name    AS user_display_name,
-    u.role            AS user_role,
-    s.application_id,
-    a.name            AS application_name,
-    s.status,
-    s.auth_methods,
-    s.mfa_verified,
-    s.ip_address,
-    s.country_code,
-    s.last_activity_at,
-    s.expires_at,
-    s.created_at
-FROM sessions s
-JOIN users        u ON u.id = s.user_id
-LEFT JOIN applications a ON a.id = s.application_id
-WHERE s.status = 'active'
-  AND s.expires_at > now();
-
-COMMENT ON VIEW v_user_sessions IS
-    'Currently active, non-expired sessions with user and application context.';
-
--- ---------------------------------------------------------------------------
--- v_user_mfa_status
--- MFA enrollment summary per user.
--- ---------------------------------------------------------------------------
-CREATE OR REPLACE VIEW v_user_mfa_status AS
-SELECT
-    u.id          AS user_id,
+    u.id              AS user_id,
     u.tenant_id,
-    u.display_name,
-    fn_user_has_mfa(u.id)                                           AS mfa_enrolled,
-    count(DISTINCT md.id) FILTER (WHERE md.status = 'active')       AS active_device_count,
-    count(DISTINCT md.id) FILTER (WHERE md.method = 'totp'
-                                    AND md.status = 'active')       AS totp_count,
-    count(DISTINCT md.id) FILTER (WHERE md.method = 'webauthn'
-                                    AND md.status = 'active')       AS webauthn_count,
-    count(DISTINCT md.id) FILTER (WHERE md.method = 'sms'
-                                    AND md.status = 'active')       AS sms_count,
-    count(DISTINCT rc.id) FILTER (WHERE rc.used = FALSE)            AS recovery_codes_remaining,
-    max(md.last_used_at)                                            AS last_mfa_used_at
+    u.mfa_enabled,
+    COUNT(d.id)       AS device_count,
+    ARRAY_AGG(DISTINCT d.method ORDER BY d.method)
+                      FILTER (WHERE d.id IS NOT NULL AND d.status = 'active')
+                      AS active_methods,
+    MAX(d.last_used_at) AS mfa_last_used_at,
+    (SELECT COUNT(*) FROM mfa_recovery_codes rc
+     WHERE rc.user_id = u.id AND rc.used = FALSE)
+                      AS unused_recovery_codes
 FROM users u
-LEFT JOIN mfa_devices        md ON md.user_id = u.id
-LEFT JOIN mfa_recovery_codes rc ON rc.user_id = u.id
+LEFT JOIN mfa_devices d
+    ON d.user_id = u.id AND d.status = 'active'
 WHERE u.deleted_at IS NULL
-GROUP BY u.id, u.tenant_id, u.display_name;
+GROUP BY u.id, u.tenant_id, u.mfa_enabled;
 
 COMMENT ON VIEW v_user_mfa_status IS
-    'MFA enrollment summary per user including device count and recovery code availability.';
+    'MFA enrollment summary per user, including method list and unused recovery codes.';
 
--- ---------------------------------------------------------------------------
--- v_oauth_token_status
--- Active OAuth tokens with app and user context.
--- ---------------------------------------------------------------------------
-CREATE OR REPLACE VIEW v_oauth_token_status AS
+-- ────────────────────────────────────────────────────────────
+-- 3. v_active_sessions
+--    Active sessions with user and application context.
+-- ────────────────────────────────────────────────────────────
+CREATE VIEW v_active_sessions AS
 SELECT
-    t.id              AS token_id,
-    t.tenant_id,
-    t.application_id,
-    a.name            AS application_name,
-    t.user_id,
-    u.display_name    AS user_display_name,
-    t.token_type,
-    t.grant_type,
-    t.scopes,
-    t.status,
-    t.expires_at,
-    t.created_at
-FROM oauth_tokens t
-JOIN applications a ON a.id = t.application_id
-LEFT JOIN users   u ON u.id = t.user_id
-WHERE t.status = 'active'
-  AND t.expires_at > now();
+    s.id                AS session_id,
+    s.user_id,
+    s.tenant_id,
+    t.slug              AS tenant_slug,
+    s.application_id,
+    a.name              AS application_name,
+    s.status,
+    s.ip_address,
+    s.user_agent,
+    s.last_active_at,
+    s.expires_at,
+    s.created_at,
+    s.sso_session_id,
+    df.trust_level      AS device_trust_level,
+    df.device_type,
+    df.os,
+    df.browser
+FROM user_sessions s
+JOIN tenants t  ON t.id = s.tenant_id
+LEFT JOIN applications a  ON a.id = s.application_id
+LEFT JOIN device_fingerprints df ON df.id = s.device_fingerprint_id
+WHERE s.status     = 'active'
+  AND s.expires_at > now();
+
+COMMENT ON VIEW v_active_sessions IS
+    'Active, non-expired sessions with device and application context.';
+
+-- ────────────────────────────────────────────────────────────
+-- 4. v_oauth_token_status
+--    Token overview per application and user.
+-- ────────────────────────────────────────────────────────────
+CREATE VIEW v_oauth_token_status AS
+SELECT
+    ot.id,
+    ot.tenant_id,
+    ot.application_id,
+    a.name         AS application_name,
+    ot.user_id,
+    ot.token_type,
+    ot.status,
+    ot.scopes,
+    ot.issued_at,
+    ot.expires_at,
+    ot.last_used_at,
+    ot.revoked_at,
+    ot.revocation_reason,
+    CASE
+        WHEN ot.status = 'active' AND ot.expires_at < now() THEN TRUE
+        ELSE FALSE
+    END            AS is_effectively_expired
+FROM oauth_tokens ot
+JOIN applications a ON a.id = ot.application_id;
 
 COMMENT ON VIEW v_oauth_token_status IS
-    'Active, non-expired OAuth tokens with application and user context.';
+    'OAuth tokens with application name and an effective expiry flag.';
 
--- ---------------------------------------------------------------------------
--- v_tenant_idp_summary
--- Identity provider summary per tenant.
--- ---------------------------------------------------------------------------
-CREATE OR REPLACE VIEW v_tenant_idp_summary AS
+-- ────────────────────────────────────────────────────────────
+-- 5. v_user_consents
+--    Consent status per user, including whether currently
+--    active and the consent document version.
+-- ────────────────────────────────────────────────────────────
+CREATE VIEW v_user_consents AS
 SELECT
-    idp.tenant_id,
-    t.name        AS tenant_name,
-    idp.id        AS provider_id,
-    idp.name      AS provider_name,
-    idp.provider_type,
-    idp.protocol,
-    idp.status,
-    idp.auto_provision_users,
-    count(fi.id)  AS federated_identity_count,
-    idp.created_at
-FROM identity_providers idp
-JOIN tenants t ON t.id = idp.tenant_id
-LEFT JOIN federated_identities fi ON fi.provider_id = idp.id
-GROUP BY idp.tenant_id, t.name, idp.id, idp.name,
-         idp.provider_type, idp.protocol, idp.status,
-         idp.auto_provision_users, idp.created_at;
-
-COMMENT ON VIEW v_tenant_idp_summary IS
-    'Identity provider configuration summary with linked identity counts.';
-
--- ---------------------------------------------------------------------------
--- v_user_consent_summary
--- Consent status overview per user.
--- ---------------------------------------------------------------------------
-CREATE OR REPLACE VIEW v_user_consent_summary AS
-SELECT
+    uc.id,
     uc.user_id,
     uc.tenant_id,
-    u.display_name,
-    count(*)  FILTER (WHERE uc.status = 'given')     AS consents_given,
-    count(*)  FILTER (WHERE uc.status = 'withdrawn') AS consents_withdrawn,
-    count(*)  FILTER (WHERE uc.status = 'pending')   AS consents_pending,
-    bool_or(uc.consent_type = 'privacy_policy'
-            AND uc.status   = 'given')               AS privacy_policy_accepted,
-    bool_or(uc.consent_type = 'terms_of_service'
-            AND uc.status   = 'given')               AS tos_accepted,
-    max(uc.given_at)                                 AS last_consent_given_at,
-    max(uc.withdrawn_at)                             AS last_consent_withdrawn_at
-FROM user_consents uc
-JOIN users u ON u.id = uc.user_id
-GROUP BY uc.user_id, uc.tenant_id, u.display_name;
+    uc.consent_type,
+    uc.status,
+    uc.document_version,
+    uc.granted_at,
+    uc.withdrawn_at,
+    uc.expires_at,
+    CASE
+        WHEN uc.status = 'granted'
+         AND (uc.expires_at IS NULL OR uc.expires_at > now())
+        THEN TRUE
+        ELSE FALSE
+    END AS is_active_consent
+FROM user_consents uc;
 
-COMMENT ON VIEW v_user_consent_summary IS
-    'Aggregated consent status per user covering all consent types.';
+COMMENT ON VIEW v_user_consents IS
+    'User consents with a computed is_active_consent flag.';
 
--- ---------------------------------------------------------------------------
--- v_audit_log_recent
--- Most recent 1000 audit entries per tenant (last 90 days).
--- ---------------------------------------------------------------------------
-CREATE OR REPLACE VIEW v_audit_log_recent AS
+-- ────────────────────────────────────────────────────────────
+-- 6. v_tenant_security_overview
+--    High-level security metrics per tenant.
+-- ────────────────────────────────────────────────────────────
+CREATE VIEW v_tenant_security_overview AS
 SELECT
-    al.id,
-    al.tenant_id,
-    al.user_id,
-    al.actor_id,
-    al.action,
-    al.resource_type,
-    al.resource_id,
-    al.ip_address,
-    al.metadata,
-    al.occurred_at
-FROM audit_logs al
-WHERE al.occurred_at > now() - INTERVAL '90 days'
-ORDER BY al.occurred_at DESC;
-
-COMMENT ON VIEW v_audit_log_recent IS
-    'Audit log entries from the past 90 days, ordered newest first.';
-
--- ---------------------------------------------------------------------------
--- v_security_event_summary
--- Open security events grouped by tenant and severity.
--- ---------------------------------------------------------------------------
-CREATE OR REPLACE VIEW v_security_event_summary AS
-SELECT
-    se.tenant_id,
-    t.name            AS tenant_name,
-    se.severity,
-    se.event_type,
-    count(*)          AS event_count,
-    avg(se.risk_score)::NUMERIC(5,2) AS avg_risk_score,
-    max(se.occurred_at)              AS last_occurred_at
-FROM security_events se
-JOIN tenants t ON t.id = se.tenant_id
-WHERE se.resolved = FALSE
-GROUP BY se.tenant_id, t.name, se.severity, se.event_type
-ORDER BY se.tenant_id, se.severity DESC, event_count DESC;
-
-COMMENT ON VIEW v_security_event_summary IS
-    'Open security events grouped by tenant, severity, and type.';
-
--- ---------------------------------------------------------------------------
--- v_tenant_overview
--- High-level tenant health dashboard.
--- ---------------------------------------------------------------------------
-CREATE OR REPLACE VIEW v_tenant_overview AS
-SELECT
-    t.id              AS tenant_id,
-    t.name,
-    t.slug,
-    t.status,
-    t.plan,
-    t.default_language,
-    t.default_timezone,
-    count(DISTINCT u.id)   FILTER (WHERE u.deleted_at IS NULL
-                                     AND u.status = 'active')     AS active_user_count,
-    count(DISTINCT app.id) FILTER (WHERE app.is_active = TRUE)    AS active_app_count,
-    count(DISTINCT idp.id) FILTER (WHERE idp.status   = 'active') AS active_idp_count,
-    count(DISTINCT s.id)   FILTER (WHERE s.status = 'active'
-                                     AND s.expires_at > now())    AS active_session_count,
-    t.created_at
+    t.id             AS tenant_id,
+    t.slug           AS tenant_slug,
+    t.name           AS tenant_name,
+    COUNT(DISTINCT u.id)
+        FILTER (WHERE u.deleted_at IS NULL)
+                     AS total_users,
+    COUNT(DISTINCT u.id)
+        FILTER (WHERE u.status = 'active' AND u.deleted_at IS NULL)
+                     AS active_users,
+    COUNT(DISTINCT u.id)
+        FILTER (WHERE u.mfa_enabled = TRUE AND u.deleted_at IS NULL)
+                     AS mfa_enabled_users,
+    COUNT(DISTINCT u.id)
+        FILTER (WHERE u.status = 'locked')
+                     AS locked_users,
+    COUNT(DISTINCT se.id)
+        FILTER (WHERE se.status = 'open' AND se.risk_level IN ('high','critical'))
+                     AS open_high_risk_events,
+    COUNT(DISTINCT s.id)
+        FILTER (WHERE s.status = 'active' AND s.expires_at > now())
+                     AS active_sessions,
+    t.require_mfa,
+    ts.sso_enabled,
+    ts.gdpr_enabled
 FROM tenants t
-LEFT JOIN users              u   ON u.tenant_id   = t.id
-LEFT JOIN applications       app ON app.tenant_id  = t.id
-LEFT JOIN identity_providers idp ON idp.tenant_id  = t.id
-LEFT JOIN sessions           s   ON s.tenant_id    = t.id
+LEFT JOIN users u              ON u.tenant_id = t.id
+LEFT JOIN security_events se   ON se.tenant_id = t.id
+LEFT JOIN user_sessions s      ON s.tenant_id = t.id
+LEFT JOIN tenant_settings ts   ON ts.tenant_id = t.id
 WHERE t.deleted_at IS NULL
-GROUP BY t.id, t.name, t.slug, t.status, t.plan,
-         t.default_language, t.default_timezone, t.created_at;
+GROUP BY
+    t.id, t.slug, t.name,
+    t.require_mfa, ts.sso_enabled, ts.gdpr_enabled;
 
-COMMENT ON VIEW v_tenant_overview IS
-    'High-level per-tenant health dashboard with user, app, IdP, and session counts.';
+COMMENT ON VIEW v_tenant_security_overview IS
+    'Aggregated security statistics per tenant.';
 
--- ---------------------------------------------------------------------------
--- v_pii_deletion_queue
--- Pending and in-progress deletion requests due for processing.
--- ---------------------------------------------------------------------------
-CREATE OR REPLACE VIEW v_pii_deletion_queue AS
+-- ────────────────────────────────────────────────────────────
+-- 7. v_idp_federation_summary
+--    Identity provider configuration with federated identity
+--    link counts.
+-- ────────────────────────────────────────────────────────────
+CREATE VIEW v_idp_federation_summary AS
 SELECT
-    dr.id           AS request_id,
+    idp.id            AS idp_id,
+    idp.tenant_id,
+    idp.name          AS idp_name,
+    idp.provider_type,
+    idp.status,
+    COUNT(fi.id)      AS total_linked_identities,
+    COUNT(fi.id)
+        FILTER (WHERE fi.status = 'active')
+                      AS active_linked_identities,
+    MAX(fi.last_login_at)
+                      AS last_federation_login
+FROM identity_providers idp
+LEFT JOIN federated_identities fi ON fi.idp_id = idp.id
+GROUP BY
+    idp.id, idp.tenant_id, idp.name, idp.provider_type, idp.status;
+
+COMMENT ON VIEW v_idp_federation_summary IS
+    'Identity provider summary including the count of linked external accounts.';
+
+-- ────────────────────────────────────────────────────────────
+-- 8. v_pending_deletion_requests
+--    GDPR deletion requests that are overdue or approaching
+--    their legal deadline.
+-- ────────────────────────────────────────────────────────────
+CREATE VIEW v_pending_deletion_requests AS
+SELECT
+    dr.id,
     dr.tenant_id,
     dr.user_id,
     dr.status,
+    dr.request_type,
     dr.regulation,
-    dr.scheduled_for,
-    dr.created_at
+    dr.requested_at,
+    dr.deadline_at,
+    CASE
+        WHEN dr.deadline_at < now() THEN 'overdue'
+        WHEN dr.deadline_at < now() + INTERVAL '7 days' THEN 'due_soon'
+        ELSE 'on_track'
+    END                   AS urgency,
+    now() - dr.requested_at AS age
 FROM pii_deletion_requests dr
-WHERE dr.status IN ('requested', 'in_progress')
-  AND dr.scheduled_for <= now()
-ORDER BY dr.scheduled_for ASC;
+WHERE dr.status IN ('pending', 'in_progress');
 
-COMMENT ON VIEW v_pii_deletion_queue IS
-    'PII deletion requests that are due for processing ordered by scheduled date.';
+COMMENT ON VIEW v_pending_deletion_requests IS
+    'Pending GDPR/PII deletion requests with urgency classification.';
 
--- ---------------------------------------------------------------------------
--- v_application_oauth_summary
--- OAuth usage summary per application.
--- ---------------------------------------------------------------------------
-CREATE OR REPLACE VIEW v_application_oauth_summary AS
+-- ────────────────────────────────────────────────────────────
+-- 9. v_audit_recent_failures
+--    Last 1000 failed authentication events across all
+--    tenants (useful for SIEM / alerting pipelines).
+-- ────────────────────────────────────────────────────────────
+CREATE VIEW v_audit_recent_failures AS
 SELECT
-    a.id                AS application_id,
+    al.id,
+    al.tenant_id,
+    al.event_type,
+    al.severity,
+    al.actor_user_id,
+    al.ip_address,
+    al.user_agent,
+    al.country_code,
+    al.error_code,
+    al.error_message,
+    al.created_at
+FROM audit_logs al
+WHERE al.outcome  = 'failure'
+  AND al.event_type IN (
+      'login_failure',
+      'mfa_failed',
+      'brute_force_detected',
+      'rate_limit_exceeded',
+      'ip_blocked'
+  )
+ORDER BY al.created_at DESC
+LIMIT 1000;
+
+COMMENT ON VIEW v_audit_recent_failures IS
+    'Recent authentication failures ordered by time (max 1000 rows).';
+
+-- ────────────────────────────────────────────────────────────
+-- 10. v_application_oauth_summary
+--     OAuth usage statistics per application.
+-- ────────────────────────────────────────────────────────────
+CREATE VIEW v_application_oauth_summary AS
+SELECT
+    a.id              AS application_id,
     a.tenant_id,
-    a.name              AS application_name,
-    a.client_type,
+    a.name            AS application_name,
+    a.app_type,
     a.is_active,
-    count(DISTINCT ot.id) FILTER (WHERE ot.status = 'active'
-                                    AND ot.token_type = 'access_token') AS active_access_tokens,
-    count(DISTINCT ot.id) FILTER (WHERE ot.token_type = 'refresh_token'
-                                    AND ot.status = 'active')           AS active_refresh_tokens,
-    count(DISTINCT ot.user_id)                                          AS distinct_users,
-    max(ot.created_at)                                                  AS last_token_issued_at
+    COUNT(ot.id)
+        FILTER (WHERE ot.token_type = 'access_token' AND ot.status = 'active' AND ot.expires_at > now())
+                      AS active_access_tokens,
+    COUNT(ot.id)
+        FILTER (WHERE ot.token_type = 'refresh_token' AND ot.status = 'active')
+                      AS active_refresh_tokens,
+    COUNT(DISTINCT ot.user_id)
+        FILTER (WHERE ot.status = 'active')
+                      AS distinct_active_users,
+    COUNT(ac.id)
+        FILTER (WHERE ac.is_used = FALSE AND ac.expires_at > now())
+                      AS pending_auth_codes,
+    ARRAY_AGG(DISTINCT os.name ORDER BY os.name)
+        FILTER (WHERE os.id IS NOT NULL)
+                      AS registered_scopes
 FROM applications a
-LEFT JOIN oauth_tokens ot ON ot.application_id = a.id
-GROUP BY a.id, a.tenant_id, a.name, a.client_type, a.is_active;
+LEFT JOIN oauth_tokens ot
+    ON ot.application_id = a.id
+LEFT JOIN oauth_authorization_codes ac
+    ON ac.application_id = a.id
+LEFT JOIN oauth_application_scopes oas
+    ON oas.application_id = a.id
+LEFT JOIN oauth_scopes os
+    ON os.id = oas.scope_id
+WHERE a.deleted_at IS NULL
+GROUP BY
+    a.id, a.tenant_id, a.name, a.app_type, a.is_active;
 
 COMMENT ON VIEW v_application_oauth_summary IS
-    'OAuth token usage summary per application.';
+    'Per-application OAuth token and scope usage summary.';

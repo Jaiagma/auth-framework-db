@@ -1,1040 +1,941 @@
--- =============================================================================
+-- ============================================================
 -- migrations/001_initial_schema.sql
--- Initial migration: Multi-Tenant Authentication Framework
--- UUID v7 for all primary and foreign keys
+-- Initial migration for the multi-tenant authentication
+-- framework.
 --
--- Apply order:
---   1. extensions.sql
---   2. enums.sql
---   3. functions.sql  (uuid_generate_v7 must exist before schema.sql)
---   4. schema.sql
---   5. triggers.sql
---   6. indexes.sql
---   7. views.sql
---   8. rls_policies.sql
---   9. seed_data.sql
+-- This file composes all component SQL files in the correct
+-- dependency order and is the single file to apply when
+-- bootstrapping a fresh PostgreSQL database.
 --
--- This single migration file bundles all steps for initial deployment.
--- Run with: psql -d <database> -f migrations/001_initial_schema.sql
--- =============================================================================
+-- Usage:
+--   psql -d <database> -f migrations/001_initial_schema.sql
+--
+-- Or with psql variables to control individual sections:
+--   psql -d <database> -v ON_ERROR_STOP=1 -f migrations/001_initial_schema.sql
+-- ============================================================
 
 BEGIN;
 
--- ---------------------------------------------------------------------------
--- Migration metadata table (idempotent)
--- ---------------------------------------------------------------------------
+-- ─── Migration metadata table (created first, once) ──────────
 CREATE TABLE IF NOT EXISTS schema_migrations (
-    version     TEXT        PRIMARY KEY,
-    applied_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-    description TEXT
+    version      TEXT        PRIMARY KEY,
+    description  TEXT        NOT NULL,
+    applied_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    checksum     TEXT
 );
 
 -- Guard: skip if already applied
 DO $$
 BEGIN
-    IF EXISTS (
-        SELECT 1 FROM schema_migrations WHERE version = '001'
-    ) THEN
+    IF EXISTS (SELECT 1 FROM schema_migrations WHERE version = '001') THEN
         RAISE NOTICE 'Migration 001 already applied – skipping.';
-        -- Signal rollback-without-error to exit early
-        RAISE EXCEPTION 'ALREADY_APPLIED' USING ERRCODE = 'P0001';
     END IF;
-END
+END;
 $$;
 
--- ===========================================================================
--- STEP 1 – EXTENSIONS
--- ===========================================================================
+-- ─── Extensions ───────────────────────────────────────────────
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS "pg_trgm";
-CREATE EXTENSION IF NOT EXISTS "btree_gist";
+CREATE EXTENSION IF NOT EXISTS "btree_gin";
+CREATE EXTENSION IF NOT EXISTS "unaccent";
 
--- ===========================================================================
--- STEP 2 – ENUM TYPES
--- ===========================================================================
-
-CREATE TYPE tenant_status AS ENUM (
-    'active','suspended','pending_activation','deactivated','deleted'
-);
-CREATE TYPE tenant_plan AS ENUM (
-    'free','starter','professional','enterprise','custom'
-);
-CREATE TYPE user_status AS ENUM (
-    'active','inactive','suspended','pending_verification','locked','deleted'
-);
-CREATE TYPE user_role AS ENUM (
-    'super_admin','tenant_admin','developer','end_user','service_account','guest'
-);
-CREATE TYPE auth_method AS ENUM (
-    'password','magic_link','passkey','sso','oauth','api_key','certificate'
-);
-CREATE TYPE mfa_method AS ENUM (
-    'totp','sms','email','webauthn','push','backup_code','hardware_key'
-);
-CREATE TYPE mfa_status AS ENUM (
-    'pending','active','disabled','revoked'
-);
-CREATE TYPE session_status AS ENUM (
-    'active','expired','revoked','logged_out'
-);
-CREATE TYPE oauth_grant_type AS ENUM (
-    'authorization_code','client_credentials','refresh_token',
-    'implicit','device_code','jwt_bearer'
-);
-CREATE TYPE oauth_token_type AS ENUM (
-    'access_token','refresh_token','id_token','device_code','authorization_code'
-);
-CREATE TYPE oauth_token_status AS ENUM (
-    'active','expired','revoked','consumed'
-);
-CREATE TYPE oauth_client_type AS ENUM (
-    'confidential','public'
-);
-CREATE TYPE idp_provider_type AS ENUM (
-    'google','github','microsoft','auth0','okta','facebook','twitter','apple',
-    'linkedin','slack','salesforce','custom_oidc','custom_saml','ldap','active_directory'
-);
-CREATE TYPE idp_protocol AS ENUM (
-    'oidc','saml2','oauth2','ldap','ws_federation','cas'
-);
-CREATE TYPE idp_status AS ENUM (
-    'active','disabled','pending_configuration','error'
-);
-CREATE TYPE sso_session_status AS ENUM (
-    'active','expired','terminated'
-);
-CREATE TYPE saml_binding AS ENUM (
-    'http_post','http_redirect','http_artifact','soap'
-);
-CREATE TYPE audit_action AS ENUM (
-    'user_created','user_updated','user_deleted',
-    'user_login','user_logout','user_locked','user_unlocked',
-    'password_changed','password_reset_requested','password_reset_completed',
-    'mfa_enrolled','mfa_verified','mfa_disabled','mfa_recovery_used',
-    'oauth_token_issued','oauth_token_revoked',
-    'oauth_authorization_granted','oauth_authorization_revoked',
-    'sso_session_started','sso_session_ended',
-    'idp_linked','idp_unlinked',
-    'tenant_created','tenant_updated','tenant_deleted',
-    'api_key_created','api_key_revoked',
-    'role_assigned','role_revoked',
-    'consent_given','consent_revoked',
-    'data_export_requested','data_deletion_requested','data_deleted',
-    'policy_updated','config_changed',
-    'security_alert','suspicious_activity','brute_force_detected',
-    'ip_blocked','device_trusted','device_revoked'
-);
-CREATE TYPE security_event_severity AS ENUM (
-    'info','low','medium','high','critical'
-);
-CREATE TYPE security_event_type AS ENUM (
-    'login_failure','brute_force','credential_stuffing','account_takeover',
-    'suspicious_location','impossible_travel','device_anomaly','token_abuse',
-    'privilege_escalation','data_exfiltration','policy_violation','anomalous_behavior'
-);
-CREATE TYPE consent_type AS ENUM (
-    'terms_of_service','privacy_policy','marketing_emails','analytics_tracking',
-    'data_sharing','cookie_consent','data_processing','cross_border_transfer'
-);
-CREATE TYPE consent_status AS ENUM (
-    'given','withdrawn','pending','expired'
-);
-CREATE TYPE data_deletion_status AS ENUM (
-    'requested','in_progress','completed','failed','cancelled'
-);
-CREATE TYPE data_classification AS ENUM (
-    'public','internal','confidential','restricted','pii','sensitive_pii','phi','financial'
-);
-CREATE TYPE retention_policy_type AS ENUM (
-    'delete','anonymize','archive','retain'
-);
-CREATE TYPE regulation_type AS ENUM (
-    'gdpr','ccpa','hipaa','pci_dss','sox','eidas','lgpd','pipeda','pdpa','appi'
-);
-CREATE TYPE device_type AS ENUM (
-    'desktop','mobile','tablet','smart_tv','iot','unknown'
-);
-CREATE TYPE device_trust_status AS ENUM (
-    'trusted','untrusted','pending_verification','revoked'
-);
-CREATE TYPE api_key_status AS ENUM (
-    'active','revoked','expired'
-);
-CREATE TYPE password_hash_algorithm AS ENUM (
-    'argon2id','bcrypt','scrypt','pbkdf2'
-);
-
--- ===========================================================================
--- STEP 3 – UUID v7 FUNCTION
--- ===========================================================================
-CREATE OR REPLACE FUNCTION uuid_generate_v7()
+-- ─── UUID v7 helper ───────────────────────────────────────────
+CREATE OR REPLACE FUNCTION generate_uuid_v7()
 RETURNS UUID
 LANGUAGE plpgsql
-PARALLEL SAFE
 AS $$
 DECLARE
-    v_unix_ms BIGINT;
-    v_rand    BYTEA;
-    v_hex     TEXT;
+    v_time       TIMESTAMPTZ := clock_timestamp();
+    v_unix_ms    BIGINT;
+    v_rand_bytes BYTEA;
+    v_uuid_hex   TEXT;
 BEGIN
-    v_unix_ms := (EXTRACT(EPOCH FROM clock_timestamp()) * 1000)::BIGINT;
-    v_rand    := gen_random_bytes(10);
-    v_hex :=
-        lpad(to_hex(v_unix_ms), 12, '0') ||
+    v_unix_ms    := FLOOR(EXTRACT(EPOCH FROM v_time) * 1000)::BIGINT;
+    v_rand_bytes := gen_random_bytes(10);
+
+    v_uuid_hex :=
+        LPAD(TO_HEX(v_unix_ms), 12, '0') ||
         '7' ||
-        lpad(to_hex((get_byte(v_rand, 0) & 15)), 1, '0') ||
-        lpad(to_hex(get_byte(v_rand, 1)), 2, '0') ||
-        lpad(to_hex((get_byte(v_rand, 2) & 63) | 128), 2, '0') ||
-        encode(substring(v_rand from 4 for 6), 'hex');
-    v_hex := lpad(v_hex, 32, '0');
+        ENCODE(SUBSTRING(v_rand_bytes FROM 1 FOR 2), 'hex') ||
+        TO_HEX((get_byte(v_rand_bytes, 2) & x'3f'::INT) | x'80'::INT) ||
+        ENCODE(SUBSTRING(v_rand_bytes FROM 4 FOR 7), 'hex');
+
     RETURN (
-        substring(v_hex, 1, 8)  || '-' ||
-        substring(v_hex, 9, 4)  || '-' ||
-        substring(v_hex, 13, 4) || '-' ||
-        substring(v_hex, 17, 4) || '-' ||
-        substring(v_hex, 21, 12)
+        SUBSTRING(v_uuid_hex, 1,  8) || '-' ||
+        SUBSTRING(v_uuid_hex, 9,  4) || '-' ||
+        SUBSTRING(v_uuid_hex, 13, 4) || '-' ||
+        SUBSTRING(v_uuid_hex, 17, 4) || '-' ||
+        SUBSTRING(v_uuid_hex, 21, 12)
     )::UUID;
 END;
 $$;
 
-CREATE OR REPLACE FUNCTION uuid_v7_to_timestamptz(p_uuid UUID)
-RETURNS TIMESTAMPTZ
-LANGUAGE sql
-IMMUTABLE PARALLEL SAFE
-AS $$
-    SELECT to_timestamp(
-        ('x' || lpad(replace(p_uuid::TEXT, '-', ''), 12, '0'))::BIT(48)::BIGINT / 1000.0
-    );
-$$;
+-- ─── ENUM types ───────────────────────────────────────────────
+-- (Inline from enums.sql to make this a self-contained migration)
 
-CREATE OR REPLACE FUNCTION fn_set_updated_at()
-RETURNS TRIGGER LANGUAGE plpgsql AS $$
-BEGIN NEW.updated_at := now(); RETURN NEW; END; $$;
+DO $$ BEGIN CREATE TYPE tenant_status AS ENUM ('active','suspended','pending','deleted'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE TYPE application_type AS ENUM ('web','mobile','spa','native','service','browser_ext'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE TYPE user_status AS ENUM ('active','inactive','locked','pending_verification','suspended','deleted'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE TYPE credential_type AS ENUM ('password','passkey','magic_link','certificate'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE TYPE user_role_type AS ENUM ('super_admin','tenant_admin','app_admin','user','guest','service_account','read_only'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE TYPE mfa_method_type AS ENUM ('totp','sms','email','webauthn','push','backup_code'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE TYPE mfa_device_status AS ENUM ('active','inactive','revoked','pending_activation'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE TYPE session_status AS ENUM ('active','expired','revoked','logged_out'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE TYPE oauth_grant_type AS ENUM ('authorization_code','client_credentials','refresh_token','device_code','implicit','password'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE TYPE oauth_token_type AS ENUM ('access_token','refresh_token','id_token'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE TYPE oauth_token_status AS ENUM ('active','expired','revoked'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE TYPE oauth_response_type AS ENUM ('code','token','id_token','code token','code id_token','token id_token','code token id_token'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE TYPE oauth_scope_type AS ENUM ('openid','profile','email','phone','address','offline_access','read','write','admin','api','mfa','impersonation'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE TYPE idp_type AS ENUM ('saml2','oidc','oauth2','ldap','active_directory','google','github','microsoft','apple','facebook','twitter','linkedin','auth0','okta','onelogin','pingidentity','custom'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE TYPE idp_status AS ENUM ('active','inactive','testing','deprecated'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE TYPE federated_identity_status AS ENUM ('active','unlinked','suspended'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE TYPE sso_protocol AS ENUM ('saml2','oidc','wsfed'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE TYPE sso_session_status AS ENUM ('active','expired','logged_out'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE TYPE audit_event_type AS ENUM ('login_success','login_failure','logout','session_expired','session_revoked','mfa_enrolled','mfa_verified','mfa_failed','mfa_revoked','recovery_code_used','user_created','user_updated','user_deleted','user_suspended','user_activated','password_changed','password_reset_requested','email_verified','token_issued','token_refreshed','token_revoked','authorization_granted','authorization_denied','sso_login','sso_logout','idp_linked','idp_unlinked','tenant_created','tenant_updated','role_assigned','role_revoked','permission_granted','permission_revoked','consent_given','consent_withdrawn','data_export_requested','data_deletion_requested','data_deleted','suspicious_activity','rate_limit_exceeded','ip_blocked','brute_force_detected','api_key_created','api_key_revoked'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE TYPE audit_severity AS ENUM ('info','warning','error','critical'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE TYPE consent_type AS ENUM ('terms_of_service','privacy_policy','cookie_policy','marketing_emails','analytics','data_processing','data_sharing','third_party_integrations','biometric_data','geolocation'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE TYPE consent_status AS ENUM ('granted','withdrawn','expired','pending'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE TYPE deletion_request_status AS ENUM ('pending','in_progress','completed','failed','cancelled'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE TYPE pii_classification AS ENUM ('public','internal','confidential','restricted','sensitive_pii','financial','health'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE TYPE pii_regulation AS ENUM ('gdpr','ccpa','hipaa','coppa','pipeda','lgpd','pdpa','eidas','ferpa','glba'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE TYPE risk_level AS ENUM ('low','medium','high','critical'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE TYPE security_event_type AS ENUM ('brute_force','credential_stuffing','account_takeover','bot_activity','impossible_travel','new_device','new_location','leaked_credential','suspicious_ip','anomalous_behavior','privilege_escalation'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE TYPE security_event_status AS ENUM ('open','investigating','mitigated','resolved','false_positive'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE TYPE device_trust_level AS ENUM ('unknown','unverified','verified','managed'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE TYPE data_residency_region AS ENUM ('us','eu','uk','ca','au','ap','global'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE TYPE regulation_region AS ENUM ('eu','us','us_california','us_virginia','uk','canada','brazil','australia','india','singapore','japan','global'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
--- ===========================================================================
--- STEP 4 – CORE SCHEMA TABLES
--- ===========================================================================
+-- ─── Schema tables ─────────────────────────────────────────────
 
--- Tenants
-CREATE TABLE tenants (
-    id                      UUID PRIMARY KEY DEFAULT uuid_generate_v7(),
-    name                    TEXT NOT NULL,
-    slug                    TEXT NOT NULL UNIQUE,
-    display_name            TEXT,
-    description             TEXT,
-    status                  tenant_status NOT NULL DEFAULT 'pending_activation',
-    plan                    tenant_plan   NOT NULL DEFAULT 'free',
-    logo_url                TEXT,
-    primary_color           VARCHAR(7),
-    login_url               TEXT,
-    support_email           TEXT,
-    billing_email           TEXT,
-    default_language        VARCHAR(10)  NOT NULL DEFAULT 'en',
-    default_timezone        TEXT         NOT NULL DEFAULT 'UTC',
-    default_region          VARCHAR(10),
-    security_settings       JSONB        NOT NULL DEFAULT '{}',
-    max_users               INT,
-    max_applications        INT          DEFAULT 10,
-    max_api_keys            INT          DEFAULT 50,
-    data_residency_region   TEXT,
-    applicable_regulations  regulation_type[] DEFAULT '{}',
-    created_at              TIMESTAMPTZ  NOT NULL DEFAULT now(),
-    updated_at              TIMESTAMPTZ  NOT NULL DEFAULT now(),
-    deleted_at              TIMESTAMPTZ
+CREATE TABLE IF NOT EXISTS tenants (
+    id                   UUID        PRIMARY KEY DEFAULT generate_uuid_v7(),
+    name                 TEXT        NOT NULL,
+    slug                 TEXT        NOT NULL UNIQUE,
+    display_name         TEXT,
+    logo_url             TEXT,
+    status               tenant_status NOT NULL DEFAULT 'active',
+    plan                 TEXT        NOT NULL DEFAULT 'free',
+    data_residency       data_residency_region NOT NULL DEFAULT 'global',
+    max_users            INT,
+    max_applications     INT,
+    allowed_mfa_methods  mfa_method_type[]  NOT NULL DEFAULT ARRAY['totp','email']::mfa_method_type[],
+    require_mfa          BOOLEAN     NOT NULL DEFAULT FALSE,
+    session_lifetime_sec INT         NOT NULL DEFAULT 86400,
+    metadata             JSONB,
+    created_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
+    deleted_at           TIMESTAMPTZ,
+    CONSTRAINT tenants_slug_fmt CHECK (slug ~ '^[a-z0-9][a-z0-9\-]{1,61}[a-z0-9]$')
 );
 
-CREATE TABLE tenant_domains (
-    id          UUID  PRIMARY KEY DEFAULT uuid_generate_v7(),
-    tenant_id   UUID  NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-    domain      TEXT  NOT NULL UNIQUE,
-    is_primary  BOOLEAN NOT NULL DEFAULT FALSE,
-    verified    BOOLEAN NOT NULL DEFAULT FALSE,
-    verified_at TIMESTAMPTZ,
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+CREATE TABLE IF NOT EXISTS tenant_settings (
+    id                          UUID  PRIMARY KEY DEFAULT generate_uuid_v7(),
+    tenant_id                   UUID  NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    password_min_length         INT   NOT NULL DEFAULT 8,
+    password_require_uppercase  BOOLEAN NOT NULL DEFAULT TRUE,
+    password_require_numbers    BOOLEAN NOT NULL DEFAULT TRUE,
+    password_require_symbols    BOOLEAN NOT NULL DEFAULT FALSE,
+    password_history_count      INT   NOT NULL DEFAULT 5,
+    max_login_attempts          INT   NOT NULL DEFAULT 5,
+    lockout_duration_sec        INT   NOT NULL DEFAULT 900,
+    session_idle_timeout_sec    INT   NOT NULL DEFAULT 3600,
+    concurrent_sessions_max     INT   NOT NULL DEFAULT 5,
+    refresh_token_lifetime_sec  INT   NOT NULL DEFAULT 2592000,
+    support_email               TEXT,
+    from_email                  TEXT,
+    custom_domain               TEXT,
+    gdpr_enabled                BOOLEAN NOT NULL DEFAULT FALSE,
+    ccpa_enabled                BOOLEAN NOT NULL DEFAULT FALSE,
+    data_retention_days         INT   NOT NULL DEFAULT 365,
+    default_language            TEXT  NOT NULL DEFAULT 'en',
+    default_timezone            TEXT  NOT NULL DEFAULT 'UTC',
+    allowed_countries           TEXT[],
+    sso_enabled                 BOOLEAN NOT NULL DEFAULT FALSE,
+    mfa_enabled                 BOOLEAN NOT NULL DEFAULT TRUE,
+    oauth_enabled               BOOLEAN NOT NULL DEFAULT TRUE,
+    registration_enabled        BOOLEAN NOT NULL DEFAULT TRUE,
+    magic_link_enabled          BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at                  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at                  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (tenant_id)
 );
 
--- Users
-CREATE TABLE users (
-    id                          UUID    PRIMARY KEY DEFAULT uuid_generate_v7(),
-    tenant_id                   UUID    NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-    email_encrypted             BYTEA   NOT NULL,
-    email_hash                  TEXT    NOT NULL,
-    phone_encrypted             BYTEA,
-    phone_hash                  TEXT,
-    first_name_encrypted        BYTEA,
-    last_name_encrypted         BYTEA,
-    display_name                TEXT,
-    avatar_url                  TEXT,
-    status                      user_status  NOT NULL DEFAULT 'pending_verification',
-    role                        user_role    NOT NULL DEFAULT 'end_user',
-    email_verified              BOOLEAN      NOT NULL DEFAULT FALSE,
-    email_verified_at           TIMESTAMPTZ,
-    phone_verified              BOOLEAN      NOT NULL DEFAULT FALSE,
-    phone_verified_at           TIMESTAMPTZ,
-    language_code               VARCHAR(10)  NOT NULL DEFAULT 'en',
-    timezone                    TEXT         NOT NULL DEFAULT 'UTC',
-    failed_login_attempts       INT          NOT NULL DEFAULT 0,
-    locked_until                TIMESTAMPTZ,
-    last_login_at               TIMESTAMPTZ,
-    last_login_ip               INET,
-    password_changed_at         TIMESTAMPTZ,
-    must_change_password        BOOLEAN      NOT NULL DEFAULT FALSE,
-    gdpr_consent_given          BOOLEAN      NOT NULL DEFAULT FALSE,
-    gdpr_consent_given_at       TIMESTAMPTZ,
-    data_deletion_requested_at  TIMESTAMPTZ,
-    external_id                 TEXT,
-    metadata                    JSONB        NOT NULL DEFAULT '{}',
-    created_at                  TIMESTAMPTZ  NOT NULL DEFAULT now(),
-    updated_at                  TIMESTAMPTZ  NOT NULL DEFAULT now(),
-    deleted_at                  TIMESTAMPTZ,
-    UNIQUE (tenant_id, email_hash)
-);
-
-CREATE TABLE user_passwords (
-    id              UUID PRIMARY KEY DEFAULT uuid_generate_v7(),
-    user_id         UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    tenant_id       UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-    password_hash   TEXT NOT NULL,
-    algorithm       password_hash_algorithm NOT NULL DEFAULT 'argon2id',
-    salt            TEXT,
-    iterations      INT,
-    is_current      BOOLEAN     NOT NULL DEFAULT TRUE,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-    expires_at      TIMESTAMPTZ
-);
-
-CREATE TABLE user_roles (
-    id          UUID PRIMARY KEY DEFAULT uuid_generate_v7(),
-    tenant_id   UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-    user_id     UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    role        user_role NOT NULL,
-    granted_by  UUID REFERENCES users(id),
-    granted_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-    expires_at  TIMESTAMPTZ,
-    UNIQUE (tenant_id, user_id, role)
-);
-
--- Applications
-CREATE TABLE applications (
-    id                  UUID PRIMARY KEY DEFAULT uuid_generate_v7(),
-    tenant_id           UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-    name                TEXT NOT NULL,
-    slug                TEXT NOT NULL,
-    description         TEXT,
-    logo_url            TEXT,
-    client_id           TEXT NOT NULL UNIQUE DEFAULT gen_random_uuid()::TEXT,
-    client_secret_hash  TEXT,
-    client_type         oauth_client_type NOT NULL DEFAULT 'confidential',
-    redirect_uris       JSONB NOT NULL DEFAULT '[]',
-    post_logout_uris    JSONB NOT NULL DEFAULT '[]',
-    allowed_origins     JSONB NOT NULL DEFAULT '[]',
-    allowed_grant_types oauth_grant_type[] NOT NULL DEFAULT '{authorization_code}',
-    access_token_ttl    INT  NOT NULL DEFAULT 3600,
-    refresh_token_ttl   INT  NOT NULL DEFAULT 2592000,
-    id_token_ttl        INT  NOT NULL DEFAULT 3600,
-    require_pkce        BOOLEAN NOT NULL DEFAULT TRUE,
-    is_first_party      BOOLEAN NOT NULL DEFAULT FALSE,
-    is_active           BOOLEAN NOT NULL DEFAULT TRUE,
-    metadata            JSONB NOT NULL DEFAULT '{}',
-    created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+CREATE TABLE IF NOT EXISTS organizations (
+    id            UUID        PRIMARY KEY DEFAULT generate_uuid_v7(),
+    tenant_id     UUID        NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    parent_id     UUID        REFERENCES organizations(id) ON DELETE SET NULL,
+    name          TEXT        NOT NULL,
+    slug          TEXT        NOT NULL,
+    description   TEXT,
+    metadata      JSONB,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    deleted_at    TIMESTAMPTZ,
     UNIQUE (tenant_id, slug)
 );
 
--- MFA
-CREATE TABLE mfa_devices (
-    id              UUID PRIMARY KEY DEFAULT uuid_generate_v7(),
-    user_id         UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    tenant_id       UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-    method          mfa_method NOT NULL,
-    status          mfa_status NOT NULL DEFAULT 'pending',
-    name            TEXT,
-    secret_encrypted BYTEA,
-    credential_id   TEXT,
-    public_key      TEXT,
-    sign_count      BIGINT,
-    aaguid          TEXT,
-    delivery_address_encrypted BYTEA,
-    push_token_encrypted BYTEA,
-    device_platform TEXT,
-    last_used_at    TIMESTAMPTZ,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+CREATE TABLE IF NOT EXISTS applications (
+    id                  UUID             PRIMARY KEY DEFAULT generate_uuid_v7(),
+    tenant_id           UUID             NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    name                TEXT             NOT NULL,
+    slug                TEXT             NOT NULL,
+    description         TEXT,
+    app_type            application_type NOT NULL DEFAULT 'web',
+    logo_url            TEXT,
+    homepage_url        TEXT,
+    privacy_policy_url  TEXT,
+    tos_url             TEXT,
+    client_id           TEXT             NOT NULL UNIQUE DEFAULT encode(gen_random_bytes(16), 'hex'),
+    client_secret_hash  TEXT,
+    redirect_uris       TEXT[]           NOT NULL DEFAULT '{}',
+    post_logout_uris    TEXT[]           NOT NULL DEFAULT '{}',
+    allowed_origins     TEXT[]           NOT NULL DEFAULT '{}',
+    access_token_ttl    INT              NOT NULL DEFAULT 3600,
+    refresh_token_ttl   INT              NOT NULL DEFAULT 2592000,
+    id_token_ttl        INT              NOT NULL DEFAULT 3600,
+    is_active           BOOLEAN          NOT NULL DEFAULT TRUE,
+    is_first_party      BOOLEAN          NOT NULL DEFAULT FALSE,
+    require_pkce        BOOLEAN          NOT NULL DEFAULT TRUE,
+    metadata            JSONB,
+    created_at          TIMESTAMPTZ      NOT NULL DEFAULT now(),
+    updated_at          TIMESTAMPTZ      NOT NULL DEFAULT now(),
+    deleted_at          TIMESTAMPTZ,
+    UNIQUE (tenant_id, slug)
 );
 
-CREATE TABLE mfa_recovery_codes (
-    id          UUID PRIMARY KEY DEFAULT uuid_generate_v7(),
-    user_id     UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    tenant_id   UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-    code_hash   TEXT NOT NULL,
-    used        BOOLEAN NOT NULL DEFAULT FALSE,
-    used_at     TIMESTAMPTZ,
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE TABLE mfa_challenges (
-    id              UUID PRIMARY KEY DEFAULT uuid_generate_v7(),
-    user_id         UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    tenant_id       UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-    device_id       UUID REFERENCES mfa_devices(id),
-    method          mfa_method NOT NULL,
-    challenge_data  JSONB NOT NULL DEFAULT '{}',
-    verified        BOOLEAN NOT NULL DEFAULT FALSE,
-    expires_at      TIMESTAMPTZ NOT NULL,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
--- Sessions
-CREATE TABLE sessions (
-    id                  UUID PRIMARY KEY DEFAULT uuid_generate_v7(),
-    user_id             UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    tenant_id           UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-    application_id      UUID REFERENCES applications(id),
-    status              session_status NOT NULL DEFAULT 'active',
-    session_token_hash  TEXT NOT NULL UNIQUE,
-    refresh_token_hash  TEXT UNIQUE,
-    auth_methods        auth_method[] NOT NULL DEFAULT '{}',
-    mfa_verified        BOOLEAN NOT NULL DEFAULT FALSE,
-    mfa_device_id       UUID REFERENCES mfa_devices(id),
-    ip_address          INET,
-    user_agent          TEXT,
-    device_id           UUID,
-    country_code        VARCHAR(2),
-    region              TEXT,
-    city                TEXT,
-    last_activity_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
-    expires_at          TIMESTAMPTZ NOT NULL,
-    created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
-    revoked_at          TIMESTAMPTZ
-);
-
--- Devices
-CREATE TABLE devices (
-    id                  UUID PRIMARY KEY DEFAULT uuid_generate_v7(),
-    user_id             UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    tenant_id           UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-    device_type         device_type NOT NULL DEFAULT 'unknown',
-    trust_status        device_trust_status NOT NULL DEFAULT 'untrusted',
-    fingerprint_hash    TEXT NOT NULL,
-    user_agent          TEXT,
-    browser             TEXT,
-    browser_version     TEXT,
-    os                  TEXT,
-    os_version          TEXT,
-    last_ip             INET,
-    friendly_name       TEXT,
-    trust_token_hash    TEXT,
-    trusted_at          TIMESTAMPTZ,
-    trusted_until       TIMESTAMPTZ,
-    last_seen_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
-    created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
-    revoked_at          TIMESTAMPTZ
-);
-
-ALTER TABLE sessions
-    ADD CONSTRAINT fk_sessions_device
-    FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE SET NULL;
-
--- OAuth 2.0
-CREATE TABLE oauth_scopes (
-    id          UUID PRIMARY KEY DEFAULT uuid_generate_v7(),
-    tenant_id   UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-    name        TEXT NOT NULL,
+CREATE TABLE IF NOT EXISTS roles (
+    id          UUID          PRIMARY KEY DEFAULT generate_uuid_v7(),
+    tenant_id   UUID          NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    name        TEXT          NOT NULL,
     description TEXT,
-    is_default  BOOLEAN NOT NULL DEFAULT FALSE,
-    is_public   BOOLEAN NOT NULL DEFAULT TRUE,
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    is_system   BOOLEAN       NOT NULL DEFAULT FALSE,
+    metadata    JSONB,
+    created_at  TIMESTAMPTZ   NOT NULL DEFAULT now(),
+    updated_at  TIMESTAMPTZ   NOT NULL DEFAULT now(),
     UNIQUE (tenant_id, name)
 );
 
-CREATE TABLE application_scopes (
-    id              UUID PRIMARY KEY DEFAULT uuid_generate_v7(),
-    application_id  UUID NOT NULL REFERENCES applications(id) ON DELETE CASCADE,
-    scope_id        UUID NOT NULL REFERENCES oauth_scopes(id) ON DELETE CASCADE,
-    UNIQUE (application_id, scope_id)
+CREATE TABLE IF NOT EXISTS permissions (
+    id          UUID        PRIMARY KEY DEFAULT generate_uuid_v7(),
+    tenant_id   UUID        NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    resource    TEXT        NOT NULL,
+    action      TEXT        NOT NULL,
+    description TEXT,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (tenant_id, resource, action)
 );
 
-CREATE TABLE oauth_authorization_codes (
-    id                    UUID PRIMARY KEY DEFAULT uuid_generate_v7(),
-    tenant_id             UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-    application_id        UUID NOT NULL REFERENCES applications(id) ON DELETE CASCADE,
-    user_id               UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    code_hash             TEXT NOT NULL UNIQUE,
-    scopes                TEXT[] NOT NULL DEFAULT '{}',
-    redirect_uri          TEXT NOT NULL,
-    code_challenge        TEXT,
-    code_challenge_method TEXT,
-    nonce                 TEXT,
-    state                 TEXT,
-    used                  BOOLEAN NOT NULL DEFAULT FALSE,
-    used_at               TIMESTAMPTZ,
-    expires_at            TIMESTAMPTZ NOT NULL,
-    created_at            TIMESTAMPTZ NOT NULL DEFAULT now()
+CREATE TABLE IF NOT EXISTS role_permissions (
+    role_id       UUID NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
+    permission_id UUID NOT NULL REFERENCES permissions(id) ON DELETE CASCADE,
+    granted_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    granted_by    UUID,
+    PRIMARY KEY (role_id, permission_id)
 );
 
-CREATE TABLE oauth_tokens (
-    id              UUID PRIMARY KEY DEFAULT uuid_generate_v7(),
-    tenant_id       UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-    application_id  UUID NOT NULL REFERENCES applications(id) ON DELETE CASCADE,
-    user_id         UUID REFERENCES users(id) ON DELETE CASCADE,
-    session_id      UUID REFERENCES sessions(id) ON DELETE CASCADE,
-    token_type      oauth_token_type   NOT NULL,
-    token_hash      TEXT               NOT NULL UNIQUE,
-    scopes          TEXT[]             NOT NULL DEFAULT '{}',
-    grant_type      oauth_grant_type   NOT NULL,
-    status          oauth_token_status NOT NULL DEFAULT 'active',
-    claims          JSONB              NOT NULL DEFAULT '{}',
-    expires_at      TIMESTAMPTZ        NOT NULL,
-    revoked_at      TIMESTAMPTZ,
-    created_at      TIMESTAMPTZ        NOT NULL DEFAULT now()
+CREATE TABLE IF NOT EXISTS users (
+    id                    UUID        PRIMARY KEY DEFAULT generate_uuid_v7(),
+    tenant_id             UUID        NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    application_id        UUID        REFERENCES applications(id) ON DELETE SET NULL,
+    organization_id       UUID        REFERENCES organizations(id) ON DELETE SET NULL,
+    email_encrypted       BYTEA       NOT NULL,
+    email_hash            TEXT        NOT NULL,
+    phone_encrypted       BYTEA,
+    phone_hash            TEXT,
+    username              TEXT,
+    status                user_status NOT NULL DEFAULT 'pending_verification',
+    email_verified        BOOLEAN     NOT NULL DEFAULT FALSE,
+    email_verified_at     TIMESTAMPTZ,
+    phone_verified        BOOLEAN     NOT NULL DEFAULT FALSE,
+    phone_verified_at     TIMESTAMPTZ,
+    mfa_enabled           BOOLEAN     NOT NULL DEFAULT FALSE,
+    mfa_enforced_at       TIMESTAMPTZ,
+    last_password_changed_at TIMESTAMPTZ,
+    last_login_at         TIMESTAMPTZ,
+    last_login_ip         INET,
+    failed_login_count    INT         NOT NULL DEFAULT 0,
+    locked_until          TIMESTAMPTZ,
+    gdpr_consent_at       TIMESTAMPTZ,
+    data_deletion_requested_at TIMESTAMPTZ,
+    metadata              JSONB,
+    created_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
+    deleted_at            TIMESTAMPTZ,
+    UNIQUE (tenant_id, email_hash),
+    UNIQUE (tenant_id, username)
 );
 
-CREATE TABLE oauth_refresh_tokens (
-    id              UUID PRIMARY KEY DEFAULT uuid_generate_v7(),
-    access_token_id UUID NOT NULL REFERENCES oauth_tokens(id) ON DELETE CASCADE,
-    tenant_id       UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-    token_hash      TEXT NOT NULL UNIQUE,
-    rotation_count  INT  NOT NULL DEFAULT 0,
-    expires_at      TIMESTAMPTZ NOT NULL,
-    revoked_at      TIMESTAMPTZ,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+CREATE TABLE IF NOT EXISTS user_profiles (
+    id                UUID        PRIMARY KEY DEFAULT generate_uuid_v7(),
+    user_id           UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    tenant_id         UUID        NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    first_name_encrypted  BYTEA,
+    last_name_encrypted   BYTEA,
+    display_name          TEXT,
+    avatar_url            TEXT,
+    birth_year        SMALLINT,
+    gender            TEXT,
+    locale            TEXT    DEFAULT 'en',
+    timezone          TEXT    DEFAULT 'UTC',
+    address_encrypted BYTEA,
+    country_code      CHAR(2),
+    preferences       JSONB,
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (user_id)
 );
 
--- API Keys
-CREATE TABLE api_keys (
-    id              UUID PRIMARY KEY DEFAULT uuid_generate_v7(),
-    tenant_id       UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-    application_id  UUID REFERENCES applications(id) ON DELETE CASCADE,
-    created_by      UUID NOT NULL REFERENCES users(id),
-    name            TEXT NOT NULL,
-    key_prefix      VARCHAR(10) NOT NULL,
-    key_hash        TEXT        NOT NULL UNIQUE,
-    scopes          TEXT[]      NOT NULL DEFAULT '{}',
-    status          api_key_status NOT NULL DEFAULT 'active',
-    last_used_at    TIMESTAMPTZ,
-    last_used_ip    INET,
+CREATE TABLE IF NOT EXISTS user_credentials (
+    id                  UUID            PRIMARY KEY DEFAULT generate_uuid_v7(),
+    user_id             UUID            NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    tenant_id           UUID            NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    credential_type     credential_type NOT NULL DEFAULT 'password',
+    password_hash       TEXT,
+    password_history    TEXT[]          NOT NULL DEFAULT '{}',
+    public_key          BYTEA,
+    credential_id       TEXT,
+    token_hash          TEXT,
+    token_expires_at    TIMESTAMPTZ,
+    is_primary          BOOLEAN         NOT NULL DEFAULT TRUE,
+    last_used_at        TIMESTAMPTZ,
+    created_at          TIMESTAMPTZ     NOT NULL DEFAULT now(),
+    updated_at          TIMESTAMPTZ     NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS user_roles (
+    id              UUID        PRIMARY KEY DEFAULT generate_uuid_v7(),
+    user_id         UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    role_id         UUID        NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
+    tenant_id       UUID        NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    application_id  UUID        REFERENCES applications(id) ON DELETE SET NULL,
     expires_at      TIMESTAMPTZ,
+    assigned_by     UUID,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-    revoked_at      TIMESTAMPTZ
+    UNIQUE (user_id, role_id, application_id)
 );
 
--- Identity Providers
-CREATE TABLE identity_providers (
-    id                   UUID PRIMARY KEY DEFAULT uuid_generate_v7(),
-    tenant_id            UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-    name                 TEXT NOT NULL,
-    display_name         TEXT,
-    logo_url             TEXT,
-    provider_type        idp_provider_type NOT NULL,
-    protocol             idp_protocol      NOT NULL,
-    status               idp_status        NOT NULL DEFAULT 'pending_configuration',
-    config_encrypted     BYTEA,
-    attribute_mapping    JSONB             NOT NULL DEFAULT '{}',
-    auto_provision_users BOOLEAN           NOT NULL DEFAULT FALSE,
-    default_role         user_role         NOT NULL DEFAULT 'end_user',
-    display_order        INT               NOT NULL DEFAULT 0,
-    is_default           BOOLEAN           NOT NULL DEFAULT FALSE,
-    created_at           TIMESTAMPTZ       NOT NULL DEFAULT now(),
-    updated_at           TIMESTAMPTZ       NOT NULL DEFAULT now()
+CREATE TABLE IF NOT EXISTS device_fingerprints (
+    id                 UUID              PRIMARY KEY DEFAULT generate_uuid_v7(),
+    user_id            UUID              REFERENCES users(id) ON DELETE CASCADE,
+    tenant_id          UUID              NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    fingerprint_hash   TEXT              NOT NULL,
+    device_type        TEXT,
+    os                 TEXT,
+    os_version         TEXT,
+    browser            TEXT,
+    browser_version    TEXT,
+    screen_resolution  TEXT,
+    trust_level        device_trust_level NOT NULL DEFAULT 'unknown',
+    trusted_at         TIMESTAMPTZ,
+    country_code       CHAR(2),
+    city               TEXT,
+    first_seen_at      TIMESTAMPTZ        NOT NULL DEFAULT now(),
+    last_seen_at       TIMESTAMPTZ        NOT NULL DEFAULT now(),
+    seen_count         INT                NOT NULL DEFAULT 1,
+    UNIQUE (tenant_id, fingerprint_hash)
 );
 
-CREATE TABLE oidc_configurations (
-    id                      UUID PRIMARY KEY DEFAULT uuid_generate_v7(),
-    provider_id             UUID NOT NULL REFERENCES identity_providers(id) ON DELETE CASCADE UNIQUE,
-    tenant_id               UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-    issuer_url              TEXT NOT NULL,
-    authorization_endpoint  TEXT NOT NULL,
-    token_endpoint          TEXT NOT NULL,
-    userinfo_endpoint       TEXT,
-    jwks_uri                TEXT NOT NULL,
-    end_session_endpoint    TEXT,
-    client_id               TEXT NOT NULL,
-    client_secret_encrypted BYTEA,
-    scopes                  TEXT[] NOT NULL DEFAULT '{openid,profile,email}',
-    response_type           TEXT   NOT NULL DEFAULT 'code',
-    pkce_required           BOOLEAN NOT NULL DEFAULT TRUE,
-    discovery_document      JSONB,
-    created_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at              TIMESTAMPTZ NOT NULL DEFAULT now()
+CREATE TABLE IF NOT EXISTS user_sessions (
+    id               UUID           PRIMARY KEY DEFAULT generate_uuid_v7(),
+    user_id          UUID           NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    tenant_id        UUID           NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    application_id   UUID           REFERENCES applications(id) ON DELETE SET NULL,
+    status           session_status NOT NULL DEFAULT 'active',
+    token_hash       TEXT           NOT NULL UNIQUE,
+    refresh_token_hash TEXT,
+    ip_address       INET,
+    user_agent       TEXT,
+    device_fingerprint_id UUID      REFERENCES device_fingerprints(id) ON DELETE SET NULL,
+    sso_session_id   UUID,
+    idp_session_id   TEXT,
+    last_active_at   TIMESTAMPTZ    NOT NULL DEFAULT now(),
+    expires_at       TIMESTAMPTZ    NOT NULL,
+    created_at       TIMESTAMPTZ    NOT NULL DEFAULT now(),
+    revoked_at       TIMESTAMPTZ
 );
 
-CREATE TABLE saml_configurations (
-    id                       UUID PRIMARY KEY DEFAULT uuid_generate_v7(),
-    provider_id              UUID NOT NULL REFERENCES identity_providers(id) ON DELETE CASCADE UNIQUE,
-    tenant_id                UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-    sp_entity_id             TEXT NOT NULL,
-    sp_acs_url               TEXT NOT NULL,
-    sp_slo_url               TEXT,
-    sp_certificate           TEXT,
-    sp_private_key_encrypted BYTEA,
-    idp_entity_id            TEXT NOT NULL,
-    idp_sso_url              TEXT NOT NULL,
-    idp_slo_url              TEXT,
-    idp_certificate          TEXT NOT NULL,
-    name_id_format           TEXT NOT NULL DEFAULT 'urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress',
-    sign_requests            BOOLEAN NOT NULL DEFAULT TRUE,
-    sign_assertions          BOOLEAN NOT NULL DEFAULT TRUE,
-    encrypt_assertions       BOOLEAN NOT NULL DEFAULT FALSE,
-    default_relay_state      TEXT,
-    binding                  saml_binding NOT NULL DEFAULT 'http_post',
-    idp_metadata_xml         TEXT,
-    created_at               TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at               TIMESTAMPTZ NOT NULL DEFAULT now()
+CREATE TABLE IF NOT EXISTS mfa_devices (
+    id             UUID              PRIMARY KEY DEFAULT generate_uuid_v7(),
+    user_id        UUID              NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    tenant_id      UUID              NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    method         mfa_method_type   NOT NULL,
+    name           TEXT,
+    status         mfa_device_status NOT NULL DEFAULT 'pending_activation',
+    totp_secret_encrypted  BYTEA,
+    totp_issuer    TEXT,
+    totp_algorithm TEXT    DEFAULT 'SHA1',
+    totp_digits    SMALLINT DEFAULT 6,
+    totp_period    SMALLINT DEFAULT 30,
+    destination_encrypted BYTEA,
+    credential_id        TEXT,
+    public_key_cbor      BYTEA,
+    aaguid               TEXT,
+    sign_count           BIGINT      DEFAULT 0,
+    rp_id                TEXT,
+    push_token_encrypted BYTEA,
+    push_provider        TEXT,
+    last_used_at         TIMESTAMPTZ,
+    verified_at          TIMESTAMPTZ,
+    created_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at           TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- Federated Identities
-CREATE TABLE federated_identities (
-    id                      UUID PRIMARY KEY DEFAULT uuid_generate_v7(),
-    user_id                 UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    tenant_id               UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-    provider_id             UUID NOT NULL REFERENCES identity_providers(id) ON DELETE CASCADE,
-    external_subject        TEXT NOT NULL,
-    external_email_hash     TEXT,
-    access_token_encrypted  BYTEA,
-    refresh_token_encrypted BYTEA,
-    id_token_encrypted      BYTEA,
-    token_expires_at        TIMESTAMPTZ,
-    raw_profile             JSONB NOT NULL DEFAULT '{}',
-    first_linked_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
-    last_used_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
-    created_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
-    UNIQUE (tenant_id, provider_id, external_subject)
-);
-
--- SSO Sessions
-CREATE TABLE sso_sessions (
-    id              UUID PRIMARY KEY DEFAULT uuid_generate_v7(),
-    tenant_id       UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-    user_id         UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    provider_id     UUID NOT NULL REFERENCES identity_providers(id),
-    idp_session_id  TEXT,
-    status          sso_session_status NOT NULL DEFAULT 'active',
-    session_index   TEXT,
-    authn_context   TEXT,
-    ip_address      INET,
-    user_agent      TEXT,
-    expires_at      TIMESTAMPTZ NOT NULL,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-    terminated_at   TIMESTAMPTZ
-);
-
-CREATE TABLE sso_session_applications (
-    id              UUID PRIMARY KEY DEFAULT uuid_generate_v7(),
-    sso_session_id  UUID NOT NULL REFERENCES sso_sessions(id) ON DELETE CASCADE,
-    application_id  UUID NOT NULL REFERENCES applications(id) ON DELETE CASCADE,
-    session_id      UUID REFERENCES sessions(id),
-    joined_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
-    UNIQUE (sso_session_id, application_id)
-);
-
--- Localization
-CREATE TABLE languages (
-    id          UUID PRIMARY KEY DEFAULT uuid_generate_v7(),
-    code        VARCHAR(10) NOT NULL UNIQUE,
-    name        TEXT NOT NULL,
-    native_name TEXT NOT NULL,
-    direction   VARCHAR(3)  NOT NULL DEFAULT 'ltr' CHECK (direction IN ('ltr','rtl')),
-    is_active   BOOLEAN NOT NULL DEFAULT TRUE,
+CREATE TABLE IF NOT EXISTS mfa_recovery_codes (
+    id          UUID        PRIMARY KEY DEFAULT generate_uuid_v7(),
+    user_id     UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    tenant_id   UUID        NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    code_hash   TEXT        NOT NULL,
+    used        BOOLEAN     NOT NULL DEFAULT FALSE,
+    used_at     TIMESTAMPTZ,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE TABLE timezones (
-    id              UUID PRIMARY KEY DEFAULT uuid_generate_v7(),
-    name            TEXT NOT NULL UNIQUE,
-    display_name    TEXT NOT NULL,
-    offset_seconds  INT  NOT NULL DEFAULT 0,
-    region          TEXT,
-    is_dst          BOOLEAN NOT NULL DEFAULT FALSE,
-    is_active       BOOLEAN NOT NULL DEFAULT TRUE,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+CREATE TABLE IF NOT EXISTS mfa_challenges (
+    id            UUID              PRIMARY KEY DEFAULT generate_uuid_v7(),
+    user_id       UUID              NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    tenant_id     UUID              NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    device_id     UUID              REFERENCES mfa_devices(id) ON DELETE CASCADE,
+    method        mfa_method_type   NOT NULL,
+    challenge     TEXT              NOT NULL,
+    is_verified   BOOLEAN           NOT NULL DEFAULT FALSE,
+    expires_at    TIMESTAMPTZ       NOT NULL,
+    verified_at   TIMESTAMPTZ,
+    ip_address    INET,
+    created_at    TIMESTAMPTZ       NOT NULL DEFAULT now()
 );
 
-CREATE TABLE user_localization_preferences (
-    id              UUID PRIMARY KEY DEFAULT uuid_generate_v7(),
-    user_id         UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE UNIQUE,
-    tenant_id       UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-    language_id     UUID REFERENCES languages(id),
-    timezone_id     UUID REFERENCES timezones(id),
-    locale          VARCHAR(20),
-    date_format     TEXT NOT NULL DEFAULT 'YYYY-MM-DD',
-    time_format     TEXT NOT NULL DEFAULT 'HH:mm:ss',
-    currency_code   VARCHAR(3),
-    number_format   TEXT NOT NULL DEFAULT 'en-US',
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+CREATE TABLE IF NOT EXISTS oauth_scopes (
+    id          UUID            PRIMARY KEY DEFAULT generate_uuid_v7(),
+    tenant_id   UUID            NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    name        TEXT            NOT NULL,
+    description TEXT,
+    is_default  BOOLEAN         NOT NULL DEFAULT FALSE,
+    is_public   BOOLEAN         NOT NULL DEFAULT TRUE,
+    created_at  TIMESTAMPTZ     NOT NULL DEFAULT now(),
+    UNIQUE (tenant_id, name)
 );
 
-CREATE TABLE tenant_regional_settings (
-    id                      UUID PRIMARY KEY DEFAULT uuid_generate_v7(),
-    tenant_id               UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-    region_code             VARCHAR(10) NOT NULL,
-    applicable_regulations  regulation_type[] NOT NULL DEFAULT '{}',
-    data_residency_zone     TEXT,
-    allowed_auth_methods    auth_method[] NOT NULL DEFAULT '{}',
-    require_mfa             BOOLEAN NOT NULL DEFAULT FALSE,
-    default_language_id     UUID REFERENCES languages(id),
-    default_timezone_id     UUID REFERENCES timezones(id),
-    created_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
-    UNIQUE (tenant_id, region_code)
+CREATE TABLE IF NOT EXISTS oauth_authorization_codes (
+    id                UUID        PRIMARY KEY DEFAULT generate_uuid_v7(),
+    tenant_id         UUID        NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    application_id    UUID        NOT NULL REFERENCES applications(id) ON DELETE CASCADE,
+    user_id           UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    code_hash         TEXT        NOT NULL UNIQUE,
+    redirect_uri      TEXT        NOT NULL,
+    scopes            TEXT[]      NOT NULL DEFAULT '{}',
+    code_challenge        TEXT,
+    code_challenge_method TEXT    CHECK (code_challenge_method IN ('S256', 'plain')),
+    nonce             TEXT,
+    state             TEXT,
+    is_used           BOOLEAN     NOT NULL DEFAULT FALSE,
+    expires_at        TIMESTAMPTZ NOT NULL,
+    used_at           TIMESTAMPTZ,
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE TABLE ui_translations (
-    id          UUID PRIMARY KEY DEFAULT uuid_generate_v7(),
-    tenant_id   UUID REFERENCES tenants(id) ON DELETE CASCADE,
-    language_id UUID NOT NULL REFERENCES languages(id),
-    key         TEXT NOT NULL,
-    value       TEXT NOT NULL,
-    namespace   TEXT NOT NULL DEFAULT 'auth',
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-    UNIQUE (tenant_id, language_id, namespace, key)
+CREATE TABLE IF NOT EXISTS oauth_tokens (
+    id                UUID             PRIMARY KEY DEFAULT generate_uuid_v7(),
+    tenant_id         UUID             NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    application_id    UUID             NOT NULL REFERENCES applications(id) ON DELETE CASCADE,
+    user_id           UUID             REFERENCES users(id) ON DELETE CASCADE,
+    token_type        oauth_token_type NOT NULL,
+    token_hash        TEXT             NOT NULL UNIQUE,
+    status            oauth_token_status NOT NULL DEFAULT 'active',
+    scopes            TEXT[]           NOT NULL DEFAULT '{}',
+    parent_token_id   UUID             REFERENCES oauth_tokens(id) ON DELETE SET NULL,
+    claims            JSONB,
+    session_id        UUID             REFERENCES user_sessions(id) ON DELETE SET NULL,
+    issued_at         TIMESTAMPTZ      NOT NULL DEFAULT now(),
+    expires_at        TIMESTAMPTZ      NOT NULL,
+    last_used_at      TIMESTAMPTZ,
+    revoked_at        TIMESTAMPTZ,
+    revocation_reason TEXT,
+    client_ip         INET,
+    created_at        TIMESTAMPTZ      NOT NULL DEFAULT now()
 );
 
--- Audit Logs (partitioned by month)
-CREATE TABLE audit_logs (
-    id              UUID        PRIMARY KEY DEFAULT uuid_generate_v7(),
-    tenant_id       UUID        NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-    user_id         UUID        REFERENCES users(id) ON DELETE SET NULL,
-    actor_id        UUID        REFERENCES users(id) ON DELETE SET NULL,
-    application_id  UUID        REFERENCES applications(id) ON DELETE SET NULL,
-    session_id      UUID        REFERENCES sessions(id) ON DELETE SET NULL,
-    action          audit_action NOT NULL,
-    resource_type   TEXT        NOT NULL,
-    resource_id     UUID,
-    ip_address      INET,
-    user_agent      TEXT,
-    old_values      JSONB,
-    new_values      JSONB,
-    metadata        JSONB       NOT NULL DEFAULT '{}',
-    occurred_at     TIMESTAMPTZ NOT NULL DEFAULT now()
-) PARTITION BY RANGE (occurred_at);
-
-CREATE TABLE audit_logs_2026_01 PARTITION OF audit_logs FOR VALUES FROM ('2026-01-01') TO ('2026-02-01');
-CREATE TABLE audit_logs_2026_02 PARTITION OF audit_logs FOR VALUES FROM ('2026-02-01') TO ('2026-03-01');
-CREATE TABLE audit_logs_2026_03 PARTITION OF audit_logs FOR VALUES FROM ('2026-03-01') TO ('2026-04-01');
-CREATE TABLE audit_logs_2026_04 PARTITION OF audit_logs FOR VALUES FROM ('2026-04-01') TO ('2026-05-01');
-CREATE TABLE audit_logs_2026_05 PARTITION OF audit_logs FOR VALUES FROM ('2026-05-01') TO ('2026-06-01');
-CREATE TABLE audit_logs_default  PARTITION OF audit_logs DEFAULT;
-
--- Security Events
-CREATE TABLE security_events (
-    id              UUID PRIMARY KEY DEFAULT uuid_generate_v7(),
-    tenant_id       UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-    user_id         UUID REFERENCES users(id) ON DELETE SET NULL,
-    application_id  UUID REFERENCES applications(id) ON DELETE SET NULL,
-    event_type      security_event_type     NOT NULL,
-    severity        security_event_severity NOT NULL DEFAULT 'medium',
-    description     TEXT,
-    ip_address      INET,
-    user_agent      TEXT,
-    country_code    VARCHAR(2),
-    risk_score      SMALLINT CHECK (risk_score BETWEEN 0 AND 100),
-    resolved        BOOLEAN NOT NULL DEFAULT FALSE,
-    resolved_by     UUID REFERENCES users(id),
-    resolved_at     TIMESTAMPTZ,
-    metadata        JSONB NOT NULL DEFAULT '{}',
-    occurred_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+CREATE TABLE IF NOT EXISTS oauth_application_scopes (
+    application_id UUID NOT NULL REFERENCES applications(id) ON DELETE CASCADE,
+    scope_id       UUID NOT NULL REFERENCES oauth_scopes(id) ON DELETE CASCADE,
+    PRIMARY KEY (application_id, scope_id)
 );
 
--- GDPR / Compliance
-CREATE TABLE user_consents (
-    id              UUID PRIMARY KEY DEFAULT uuid_generate_v7(),
-    user_id         UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    tenant_id       UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-    consent_type    consent_type   NOT NULL,
-    status          consent_status NOT NULL DEFAULT 'pending',
-    version         TEXT NOT NULL,
-    given_at        TIMESTAMPTZ,
-    withdrawn_at    TIMESTAMPTZ,
-    expires_at      TIMESTAMPTZ,
-    ip_address      INET,
-    user_agent      TEXT,
-    metadata        JSONB NOT NULL DEFAULT '{}',
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-    UNIQUE (user_id, tenant_id, consent_type, version)
+CREATE TABLE IF NOT EXISTS identity_providers (
+    id               UUID       PRIMARY KEY DEFAULT generate_uuid_v7(),
+    tenant_id        UUID       NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    name             TEXT       NOT NULL,
+    slug             TEXT       NOT NULL,
+    provider_type    idp_type   NOT NULL,
+    status           idp_status NOT NULL DEFAULT 'active',
+    issuer_url       TEXT,
+    authorization_endpoint TEXT,
+    token_endpoint   TEXT,
+    userinfo_endpoint TEXT,
+    jwks_uri         TEXT,
+    client_id        TEXT,
+    client_secret_encrypted BYTEA,
+    entity_id        TEXT,
+    metadata_url     TEXT,
+    sso_url          TEXT,
+    slo_url          TEXT,
+    x509_cert        TEXT,
+    auto_provision   BOOLEAN    NOT NULL DEFAULT FALSE,
+    sync_on_login    BOOLEAN    NOT NULL DEFAULT TRUE,
+    default_role_id  UUID       REFERENCES roles(id) ON DELETE SET NULL,
+    attribute_mapping JSONB,
+    logo_url         TEXT,
+    button_label     TEXT,
+    config           JSONB,
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (tenant_id, slug)
 );
 
-CREATE TABLE data_retention_policies (
-    id              UUID PRIMARY KEY DEFAULT uuid_generate_v7(),
-    tenant_id       UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-    resource_type   TEXT NOT NULL,
-    retention_days  INT  NOT NULL,
-    action          retention_policy_type NOT NULL DEFAULT 'delete',
-    regulation      regulation_type,
-    is_active       BOOLEAN NOT NULL DEFAULT TRUE,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-    UNIQUE (tenant_id, resource_type)
+CREATE TABLE IF NOT EXISTS saml_configurations (
+    id                   UUID  PRIMARY KEY DEFAULT generate_uuid_v7(),
+    tenant_id            UUID  NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    idp_id               UUID  NOT NULL REFERENCES identity_providers(id) ON DELETE CASCADE,
+    sp_entity_id         TEXT  NOT NULL,
+    sp_acs_url           TEXT  NOT NULL,
+    sp_slo_url           TEXT,
+    sp_metadata_url      TEXT,
+    sp_private_key_encrypted BYTEA,
+    sp_certificate       TEXT,
+    sign_requests        BOOLEAN NOT NULL DEFAULT TRUE,
+    sign_assertions      BOOLEAN NOT NULL DEFAULT TRUE,
+    encrypt_assertions   BOOLEAN NOT NULL DEFAULT FALSE,
+    signature_algorithm  TEXT    NOT NULL DEFAULT 'http://www.w3.org/2001/04/xmldsig-more#rsa-sha256',
+    digest_algorithm     TEXT    NOT NULL DEFAULT 'http://www.w3.org/2001/04/xmlenc#sha256',
+    name_id_format       TEXT    NOT NULL DEFAULT 'urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress',
+    attribute_mapping    JSONB,
+    created_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (tenant_id, idp_id)
 );
 
-CREATE TABLE pii_deletion_requests (
-    id              UUID PRIMARY KEY DEFAULT uuid_generate_v7(),
-    user_id         UUID NOT NULL REFERENCES users(id),
-    tenant_id       UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-    requested_by    UUID REFERENCES users(id),
-    status          data_deletion_status NOT NULL DEFAULT 'requested',
-    reason          TEXT,
-    regulation      regulation_type,
-    verified_at     TIMESTAMPTZ,
-    scheduled_for   TIMESTAMPTZ,
+CREATE TABLE IF NOT EXISTS oidc_configurations (
+    id                   UUID  PRIMARY KEY DEFAULT generate_uuid_v7(),
+    tenant_id            UUID  NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    idp_id               UUID  NOT NULL REFERENCES identity_providers(id) ON DELETE CASCADE,
+    discovery_url        TEXT,
+    client_id            TEXT  NOT NULL,
+    client_secret_encrypted BYTEA,
+    response_type        TEXT  NOT NULL DEFAULT 'code',
+    scopes               TEXT[] NOT NULL DEFAULT ARRAY['openid','profile','email'],
+    id_token_signing_alg TEXT  NOT NULL DEFAULT 'RS256',
+    use_pkce             BOOLEAN NOT NULL DEFAULT TRUE,
+    pkce_method          TEXT    NOT NULL DEFAULT 'S256',
+    claims_mapping       JSONB,
+    extra_params         JSONB,
+    created_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (tenant_id, idp_id)
+);
+
+CREATE TABLE IF NOT EXISTS sso_sessions (
+    id                 UUID              PRIMARY KEY DEFAULT generate_uuid_v7(),
+    tenant_id          UUID              NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    user_id            UUID              NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    idp_id             UUID              REFERENCES identity_providers(id) ON DELETE SET NULL,
+    protocol           sso_protocol      NOT NULL,
+    status             sso_session_status NOT NULL DEFAULT 'active',
+    idp_session_id     TEXT,
+    idp_name_id        TEXT,
+    participating_apps UUID[]            NOT NULL DEFAULT '{}',
+    id_token           TEXT,
+    saml_assertion_id  TEXT,
+    authenticated_at   TIMESTAMPTZ       NOT NULL DEFAULT now(),
+    expires_at         TIMESTAMPTZ       NOT NULL,
+    last_active_at     TIMESTAMPTZ       NOT NULL DEFAULT now(),
+    logged_out_at      TIMESTAMPTZ,
+    ip_address         INET,
+    user_agent         TEXT,
+    created_at         TIMESTAMPTZ       NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS federated_identities (
+    id                  UUID                    PRIMARY KEY DEFAULT generate_uuid_v7(),
+    user_id             UUID                    NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    tenant_id           UUID                    NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    idp_id              UUID                    NOT NULL REFERENCES identity_providers(id) ON DELETE CASCADE,
+    status              federated_identity_status NOT NULL DEFAULT 'active',
+    subject             TEXT                    NOT NULL,
+    access_token_encrypted  BYTEA,
+    refresh_token_encrypted BYTEA,
+    token_expires_at    TIMESTAMPTZ,
+    idp_profile         JSONB,
+    email               TEXT,
+    name                TEXT,
+    picture_url         TEXT,
+    last_login_at       TIMESTAMPTZ,
+    linked_at           TIMESTAMPTZ             NOT NULL DEFAULT now(),
+    unlinked_at         TIMESTAMPTZ,
+    created_at          TIMESTAMPTZ             NOT NULL DEFAULT now(),
+    updated_at          TIMESTAMPTZ             NOT NULL DEFAULT now(),
+    UNIQUE (tenant_id, idp_id, subject)
+);
+
+CREATE TABLE IF NOT EXISTS linked_accounts (
+    id               UUID        PRIMARY KEY DEFAULT generate_uuid_v7(),
+    user_id          UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    tenant_id        UUID        NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    target_user_id   UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    link_type        TEXT        NOT NULL DEFAULT 'same_person',
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (user_id, target_user_id)
+);
+
+CREATE TABLE IF NOT EXISTS languages (
+    id           UUID  PRIMARY KEY DEFAULT generate_uuid_v7(),
+    code         CHAR(5) NOT NULL UNIQUE,
+    name         TEXT  NOT NULL,
+    native_name  TEXT  NOT NULL,
+    is_rtl       BOOLEAN NOT NULL DEFAULT FALSE,
+    is_active    BOOLEAN NOT NULL DEFAULT TRUE,
+    sort_order   SMALLINT NOT NULL DEFAULT 0,
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS timezones (
+    id           UUID     PRIMARY KEY DEFAULT generate_uuid_v7(),
+    name         TEXT     NOT NULL UNIQUE,
+    abbreviation TEXT,
+    utc_offset   INTERVAL NOT NULL,
+    has_dst      BOOLEAN  NOT NULL DEFAULT FALSE,
+    region       TEXT,
+    is_active    BOOLEAN  NOT NULL DEFAULT TRUE,
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS user_localization_preferences (
+    id               UUID  PRIMARY KEY DEFAULT generate_uuid_v7(),
+    user_id          UUID  NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    tenant_id        UUID  NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    language_code    TEXT  NOT NULL DEFAULT 'en',
+    timezone         TEXT  NOT NULL DEFAULT 'UTC',
+    date_format      TEXT  NOT NULL DEFAULT 'YYYY-MM-DD',
+    time_format      TEXT  NOT NULL DEFAULT 'HH:mm',
+    number_format    TEXT  NOT NULL DEFAULT '1,234.56',
+    currency         CHAR(3) NOT NULL DEFAULT 'USD',
+    first_day_of_week SMALLINT NOT NULL DEFAULT 1,
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (user_id)
+);
+
+CREATE TABLE IF NOT EXISTS tenant_regional_settings (
+    id                       UUID               PRIMARY KEY DEFAULT generate_uuid_v7(),
+    tenant_id                UUID               NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    regulation               regulation_region  NOT NULL,
+    data_residency           data_residency_region NOT NULL,
+    gdpr_enabled             BOOLEAN            NOT NULL DEFAULT FALSE,
+    ccpa_enabled             BOOLEAN            NOT NULL DEFAULT FALSE,
+    eidas_enabled            BOOLEAN            NOT NULL DEFAULT FALSE,
+    restrict_cross_border    BOOLEAN            NOT NULL DEFAULT FALSE,
+    allowed_transfer_regions data_residency_region[],
+    data_retention_days      INT                NOT NULL DEFAULT 365,
+    consent_required         BOOLEAN            NOT NULL DEFAULT TRUE,
+    created_at               TIMESTAMPTZ        NOT NULL DEFAULT now(),
+    updated_at               TIMESTAMPTZ        NOT NULL DEFAULT now(),
+    UNIQUE (tenant_id, regulation)
+);
+
+CREATE TABLE IF NOT EXISTS ui_translations (
+    id           UUID  PRIMARY KEY DEFAULT generate_uuid_v7(),
+    tenant_id    UUID  REFERENCES tenants(id) ON DELETE CASCADE,
+    language_code TEXT NOT NULL,
+    namespace    TEXT NOT NULL DEFAULT 'common',
+    key          TEXT NOT NULL,
+    value        TEXT NOT NULL,
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (tenant_id, language_code, namespace, key)
+);
+
+CREATE TABLE IF NOT EXISTS audit_logs (
+    id               UUID             PRIMARY KEY DEFAULT generate_uuid_v7(),
+    tenant_id        UUID             NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    event_type       audit_event_type NOT NULL,
+    severity         audit_severity   NOT NULL DEFAULT 'info',
+    actor_user_id    UUID             REFERENCES users(id) ON DELETE SET NULL,
+    actor_type       TEXT             NOT NULL DEFAULT 'user',
+    resource_type    TEXT,
+    resource_id      TEXT,
+    application_id   UUID             REFERENCES applications(id) ON DELETE SET NULL,
+    session_id       UUID,
+    ip_address       INET,
+    user_agent       TEXT,
+    country_code     CHAR(2),
+    region_code      TEXT,
+    outcome          TEXT             NOT NULL DEFAULT 'success',
+    error_code       TEXT,
+    error_message    TEXT,
+    metadata         JSONB,
+    previous_log_id  UUID             REFERENCES audit_logs(id) ON DELETE SET NULL,
+    created_at       TIMESTAMPTZ      NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS user_consents (
+    id               UUID           PRIMARY KEY DEFAULT generate_uuid_v7(),
+    user_id          UUID           NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    tenant_id        UUID           NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    consent_type     consent_type   NOT NULL,
+    status           consent_status NOT NULL DEFAULT 'pending',
+    document_version TEXT           NOT NULL DEFAULT '1.0',
+    document_url     TEXT,
+    ip_address       INET,
+    user_agent       TEXT,
+    method           TEXT           NOT NULL DEFAULT 'explicit',
+    granted_at       TIMESTAMPTZ,
+    withdrawn_at     TIMESTAMPTZ,
+    expires_at       TIMESTAMPTZ,
+    created_at       TIMESTAMPTZ    NOT NULL DEFAULT now(),
+    updated_at       TIMESTAMPTZ    NOT NULL DEFAULT now(),
+    CONSTRAINT uq_user_consent_type UNIQUE (user_id, consent_type)
+);
+
+CREATE TABLE IF NOT EXISTS data_retention_policies (
+    id                UUID        PRIMARY KEY DEFAULT generate_uuid_v7(),
+    tenant_id         UUID        NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    table_name        TEXT        NOT NULL,
+    retention_days    INT         NOT NULL,
+    filter_column     TEXT        NOT NULL DEFAULT 'deleted_at',
+    is_hard_delete    BOOLEAN     NOT NULL DEFAULT FALSE,
+    regulation        pii_regulation,
+    is_active         BOOLEAN     NOT NULL DEFAULT TRUE,
+    last_run_at       TIMESTAMPTZ,
+    next_run_at       TIMESTAMPTZ,
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (tenant_id, table_name)
+);
+
+CREATE TABLE IF NOT EXISTS pii_deletion_requests (
+    id              UUID                    PRIMARY KEY DEFAULT generate_uuid_v7(),
+    tenant_id       UUID                    NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    user_id         UUID                    NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    status          deletion_request_status NOT NULL DEFAULT 'pending',
+    request_type    TEXT                    NOT NULL DEFAULT 'erasure',
+    regulation      pii_regulation,
+    requested_at    TIMESTAMPTZ             NOT NULL DEFAULT now(),
+    deadline_at     TIMESTAMPTZ,
     completed_at    TIMESTAMPTZ,
+    failed_at       TIMESTAMPTZ,
     failure_reason  TEXT,
-    metadata        JSONB NOT NULL DEFAULT '{}',
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+    requested_by    UUID                    REFERENCES users(id) ON DELETE SET NULL,
+    notes           TEXT,
+    created_at      TIMESTAMPTZ             NOT NULL DEFAULT now(),
+    updated_at      TIMESTAMPTZ             NOT NULL DEFAULT now()
 );
 
-CREATE TABLE data_export_requests (
-    id                  UUID PRIMARY KEY DEFAULT uuid_generate_v7(),
-    user_id             UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    tenant_id           UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-    requested_by        UUID REFERENCES users(id),
-    status              TEXT NOT NULL DEFAULT 'pending'
-                            CHECK (status IN ('pending','processing','ready','downloaded','expired','failed')),
-    format              TEXT NOT NULL DEFAULT 'json' CHECK (format IN ('json','csv','xml')),
-    download_url        TEXT,
-    download_token_hash TEXT,
-    expires_at          TIMESTAMPTZ,
-    completed_at        TIMESTAMPTZ,
-    created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at          TIMESTAMPTZ NOT NULL DEFAULT now()
+CREATE TABLE IF NOT EXISTS security_events (
+    id               UUID                  PRIMARY KEY DEFAULT generate_uuid_v7(),
+    tenant_id        UUID                  NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    user_id          UUID                  REFERENCES users(id) ON DELETE SET NULL,
+    event_type       security_event_type   NOT NULL,
+    risk_level       risk_level            NOT NULL DEFAULT 'low',
+    status           security_event_status NOT NULL DEFAULT 'open',
+    ip_address       INET,
+    user_agent       TEXT,
+    country_code     CHAR(2),
+    description      TEXT,
+    metadata         JSONB,
+    resolved_by      UUID                  REFERENCES users(id) ON DELETE SET NULL,
+    resolved_at      TIMESTAMPTZ,
+    resolution_note  TEXT,
+    created_at       TIMESTAMPTZ           NOT NULL DEFAULT now(),
+    updated_at       TIMESTAMPTZ           NOT NULL DEFAULT now()
 );
 
-CREATE TABLE pii_field_registry (
-    id                  UUID PRIMARY KEY DEFAULT uuid_generate_v7(),
-    tenant_id           UUID REFERENCES tenants(id) ON DELETE CASCADE,
-    table_name          TEXT NOT NULL,
-    column_name         TEXT NOT NULL,
-    classification      data_classification NOT NULL,
-    description         TEXT,
-    encryption_required BOOLEAN NOT NULL DEFAULT TRUE,
-    applicable_regulations regulation_type[] NOT NULL DEFAULT '{}',
-    created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+CREATE TABLE IF NOT EXISTS rate_limit_configs (
+    id               UUID        PRIMARY KEY DEFAULT generate_uuid_v7(),
+    tenant_id        UUID        NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    resource         TEXT        NOT NULL,
+    max_requests     INT         NOT NULL,
+    window_sec       INT         NOT NULL,
+    scope            TEXT        NOT NULL DEFAULT 'ip',
+    action           TEXT        NOT NULL DEFAULT 'block',
+    is_active        BOOLEAN     NOT NULL DEFAULT TRUE,
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (tenant_id, resource, scope)
+);
+
+CREATE TABLE IF NOT EXISTS ip_allowlists (
+    id          UUID        PRIMARY KEY DEFAULT generate_uuid_v7(),
+    tenant_id   UUID        NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    cidr        CIDR        NOT NULL,
+    description TEXT,
+    is_blocklist BOOLEAN    NOT NULL DEFAULT FALSE,
+    expires_at  TIMESTAMPTZ,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    created_by  UUID        REFERENCES users(id) ON DELETE SET NULL,
+    UNIQUE (tenant_id, cidr, is_blocklist)
+);
+
+CREATE TABLE IF NOT EXISTS pii_data_classifications (
+    id               UUID               PRIMARY KEY DEFAULT generate_uuid_v7(),
+    tenant_id        UUID               REFERENCES tenants(id) ON DELETE CASCADE,
+    table_name       TEXT               NOT NULL,
+    column_name      TEXT               NOT NULL,
+    classification   pii_classification NOT NULL DEFAULT 'internal',
+    regulations      pii_regulation[]   NOT NULL DEFAULT '{}',
+    is_encrypted     BOOLEAN            NOT NULL DEFAULT FALSE,
+    encryption_key_id TEXT,
+    notes            TEXT,
+    created_at       TIMESTAMPTZ        NOT NULL DEFAULT now(),
+    updated_at       TIMESTAMPTZ        NOT NULL DEFAULT now(),
     UNIQUE (tenant_id, table_name, column_name)
 );
 
--- Password Reset & Magic Links
-CREATE TABLE password_reset_tokens (
-    id          UUID PRIMARY KEY DEFAULT uuid_generate_v7(),
-    user_id     UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    tenant_id   UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-    token_hash  TEXT NOT NULL UNIQUE,
-    used        BOOLEAN NOT NULL DEFAULT FALSE,
+CREATE TABLE IF NOT EXISTS api_keys (
+    id               UUID        PRIMARY KEY DEFAULT generate_uuid_v7(),
+    tenant_id        UUID        NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    application_id   UUID        REFERENCES applications(id) ON DELETE SET NULL,
+    user_id          UUID        REFERENCES users(id) ON DELETE SET NULL,
+    name             TEXT        NOT NULL,
+    key_hash         TEXT        NOT NULL UNIQUE,
+    key_prefix       CHAR(8)     NOT NULL,
+    scopes           TEXT[]      NOT NULL DEFAULT '{}',
+    is_active        BOOLEAN     NOT NULL DEFAULT TRUE,
+    expires_at       TIMESTAMPTZ,
+    last_used_at     TIMESTAMPTZ,
+    last_used_ip     INET,
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+    revoked_at       TIMESTAMPTZ,
+    revoked_by       UUID        REFERENCES users(id) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS password_reset_tokens (
+    id          UUID        PRIMARY KEY DEFAULT generate_uuid_v7(),
+    user_id     UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    tenant_id   UUID        NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    token_hash  TEXT        NOT NULL UNIQUE,
+    is_used     BOOLEAN     NOT NULL DEFAULT FALSE,
+    expires_at  TIMESTAMPTZ NOT NULL,
     used_at     TIMESTAMPTZ,
     ip_address  INET,
-    expires_at  TIMESTAMPTZ NOT NULL,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE TABLE magic_links (
-    id              UUID PRIMARY KEY DEFAULT uuid_generate_v7(),
-    user_id         UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    tenant_id       UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-    application_id  UUID REFERENCES applications(id),
-    token_hash      TEXT NOT NULL UNIQUE,
-    redirect_url    TEXT,
-    used            BOOLEAN NOT NULL DEFAULT FALSE,
-    used_at         TIMESTAMPTZ,
-    ip_address      INET,
-    expires_at      TIMESTAMPTZ NOT NULL,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE TABLE email_verification_tokens (
-    id          UUID PRIMARY KEY DEFAULT uuid_generate_v7(),
-    user_id     UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    tenant_id   UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-    token_hash  TEXT NOT NULL UNIQUE,
-    email_hash  TEXT NOT NULL,
-    used        BOOLEAN NOT NULL DEFAULT FALSE,
+CREATE TABLE IF NOT EXISTS email_verification_tokens (
+    id          UUID        PRIMARY KEY DEFAULT generate_uuid_v7(),
+    user_id     UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    tenant_id   UUID        NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    token_hash  TEXT        NOT NULL UNIQUE,
+    email_hash  TEXT        NOT NULL,
+    is_used     BOOLEAN     NOT NULL DEFAULT FALSE,
+    expires_at  TIMESTAMPTZ NOT NULL,
     used_at     TIMESTAMPTZ,
-    expires_at  TIMESTAMPTZ NOT NULL,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- Rate Limiting & IP Management
-CREATE TABLE ip_allowlist (
-    id              UUID PRIMARY KEY DEFAULT uuid_generate_v7(),
-    tenant_id       UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-    application_id  UUID REFERENCES applications(id) ON DELETE CASCADE,
-    cidr            CIDR    NOT NULL,
-    description     TEXT,
-    is_active       BOOLEAN NOT NULL DEFAULT TRUE,
-    created_by      UUID REFERENCES users(id),
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
-);
+-- ─── Functions ────────────────────────────────────────────────
 
-CREATE TABLE ip_blocklist (
-    id          UUID PRIMARY KEY DEFAULT uuid_generate_v7(),
-    tenant_id   UUID REFERENCES tenants(id) ON DELETE CASCADE,
-    cidr        CIDR NOT NULL,
-    reason      TEXT NOT NULL,
-    added_by    UUID REFERENCES users(id),
-    expires_at  TIMESTAMPTZ,
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
-);
+CREATE OR REPLACE FUNCTION sha256_hex(value TEXT)
+RETURNS TEXT LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
+    SELECT encode(digest(value, 'sha256'), 'hex');
+$$;
 
--- Webhooks
-CREATE TABLE webhooks (
-    id                  UUID PRIMARY KEY DEFAULT uuid_generate_v7(),
-    tenant_id           UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-    application_id      UUID REFERENCES applications(id) ON DELETE CASCADE,
-    url                 TEXT    NOT NULL,
-    secret_hash         TEXT,
-    events              TEXT[]  NOT NULL DEFAULT '{}',
-    is_active           BOOLEAN NOT NULL DEFAULT TRUE,
-    failure_count       INT     NOT NULL DEFAULT 0,
-    last_triggered_at   TIMESTAMPTZ,
-    last_failure_at     TIMESTAMPTZ,
-    created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at          TIMESTAMPTZ NOT NULL DEFAULT now()
-);
+CREATE OR REPLACE FUNCTION encrypt_pii(plaintext TEXT, aes_key TEXT)
+RETURNS BYTEA LANGUAGE plpgsql AS $$
+BEGIN
+    IF plaintext IS NULL THEN RETURN NULL; END IF;
+    RETURN pgp_sym_encrypt(plaintext, aes_key, 'cipher-algo=aes256');
+END;
+$$;
 
-CREATE TABLE webhook_deliveries (
-    id              UUID PRIMARY KEY DEFAULT uuid_generate_v7(),
-    webhook_id      UUID NOT NULL REFERENCES webhooks(id) ON DELETE CASCADE,
-    tenant_id       UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-    event_type      TEXT NOT NULL,
-    payload         JSONB NOT NULL DEFAULT '{}',
-    response_status INT,
-    response_body   TEXT,
-    duration_ms     INT,
-    success         BOOLEAN NOT NULL DEFAULT FALSE,
-    attempt         INT     NOT NULL DEFAULT 1,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
-);
+CREATE OR REPLACE FUNCTION decrypt_pii(ciphertext BYTEA, aes_key TEXT)
+RETURNS TEXT LANGUAGE plpgsql AS $$
+BEGIN
+    IF ciphertext IS NULL THEN RETURN NULL; END IF;
+    RETURN pgp_sym_decrypt(ciphertext, aes_key);
+EXCEPTION WHEN others THEN RETURN NULL;
+END;
+$$;
 
--- ===========================================================================
--- STEP 5 – updated_at TRIGGERS
--- ===========================================================================
-CREATE TRIGGER trg_tenants_updated_at
-    BEFORE UPDATE ON tenants FOR EACH ROW EXECUTE FUNCTION fn_set_updated_at();
-CREATE TRIGGER trg_applications_updated_at
-    BEFORE UPDATE ON applications FOR EACH ROW EXECUTE FUNCTION fn_set_updated_at();
-CREATE TRIGGER trg_users_updated_at
-    BEFORE UPDATE ON users FOR EACH ROW EXECUTE FUNCTION fn_set_updated_at();
-CREATE TRIGGER trg_mfa_devices_updated_at
-    BEFORE UPDATE ON mfa_devices FOR EACH ROW EXECUTE FUNCTION fn_set_updated_at();
-CREATE TRIGGER trg_identity_providers_updated_at
-    BEFORE UPDATE ON identity_providers FOR EACH ROW EXECUTE FUNCTION fn_set_updated_at();
-CREATE TRIGGER trg_oidc_configurations_updated_at
-    BEFORE UPDATE ON oidc_configurations FOR EACH ROW EXECUTE FUNCTION fn_set_updated_at();
-CREATE TRIGGER trg_saml_configurations_updated_at
-    BEFORE UPDATE ON saml_configurations FOR EACH ROW EXECUTE FUNCTION fn_set_updated_at();
-CREATE TRIGGER trg_federated_identities_updated_at
-    BEFORE UPDATE ON federated_identities FOR EACH ROW EXECUTE FUNCTION fn_set_updated_at();
-CREATE TRIGGER trg_user_localization_preferences_updated_at
-    BEFORE UPDATE ON user_localization_preferences FOR EACH ROW EXECUTE FUNCTION fn_set_updated_at();
-CREATE TRIGGER trg_tenant_regional_settings_updated_at
-    BEFORE UPDATE ON tenant_regional_settings FOR EACH ROW EXECUTE FUNCTION fn_set_updated_at();
-CREATE TRIGGER trg_ui_translations_updated_at
-    BEFORE UPDATE ON ui_translations FOR EACH ROW EXECUTE FUNCTION fn_set_updated_at();
-CREATE TRIGGER trg_user_consents_updated_at
-    BEFORE UPDATE ON user_consents FOR EACH ROW EXECUTE FUNCTION fn_set_updated_at();
-CREATE TRIGGER trg_data_retention_policies_updated_at
-    BEFORE UPDATE ON data_retention_policies FOR EACH ROW EXECUTE FUNCTION fn_set_updated_at();
-CREATE TRIGGER trg_pii_deletion_requests_updated_at
-    BEFORE UPDATE ON pii_deletion_requests FOR EACH ROW EXECUTE FUNCTION fn_set_updated_at();
-CREATE TRIGGER trg_data_export_requests_updated_at
-    BEFORE UPDATE ON data_export_requests FOR EACH ROW EXECUTE FUNCTION fn_set_updated_at();
-CREATE TRIGGER trg_webhooks_updated_at
-    BEFORE UPDATE ON webhooks FOR EACH ROW EXECUTE FUNCTION fn_set_updated_at();
+CREATE OR REPLACE FUNCTION set_updated_at()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN NEW.updated_at := now(); RETURN NEW; END;
+$$;
 
--- ===========================================================================
--- STEP 6 – CORE INDEXES
--- ===========================================================================
-CREATE INDEX idx_tenants_slug           ON tenants (slug);
-CREATE INDEX idx_tenants_status         ON tenants (status) WHERE status <> 'deleted';
-CREATE INDEX idx_tenant_domains_domain  ON tenant_domains (domain);
-CREATE INDEX idx_users_tenant_status    ON users (tenant_id, status) WHERE deleted_at IS NULL;
-CREATE INDEX idx_users_email_hash       ON users (tenant_id, email_hash);
-CREATE INDEX idx_users_created_at       ON users (tenant_id, created_at DESC);
-CREATE INDEX idx_applications_client_id ON applications (client_id);
-CREATE INDEX idx_sessions_token_hash    ON sessions (session_token_hash);
-CREATE INDEX idx_sessions_user_active   ON sessions (user_id, status, expires_at) WHERE status = 'active';
-CREATE INDEX idx_sessions_expires_at    ON sessions (expires_at) WHERE status = 'active';
-CREATE INDEX idx_mfa_devices_user       ON mfa_devices (user_id, status) WHERE status = 'active';
-CREATE INDEX idx_oauth_tokens_hash      ON oauth_tokens (token_hash);
-CREATE INDEX idx_oauth_tokens_user      ON oauth_tokens (user_id, status, expires_at) WHERE status = 'active';
-CREATE INDEX idx_api_keys_hash          ON api_keys (key_hash);
-CREATE INDEX idx_federated_subject      ON federated_identities (tenant_id, provider_id, external_subject);
-CREATE INDEX idx_audit_logs_tenant      ON audit_logs (tenant_id, action, occurred_at DESC);
-CREATE INDEX idx_audit_logs_user        ON audit_logs (user_id, occurred_at DESC) WHERE user_id IS NOT NULL;
-CREATE INDEX idx_security_events_open   ON security_events (tenant_id, severity, occurred_at DESC) WHERE resolved = FALSE;
-CREATE INDEX idx_pii_deletion_due       ON pii_deletion_requests (status, scheduled_for) WHERE status IN ('requested','in_progress');
-CREATE INDEX idx_password_reset_hash    ON password_reset_tokens (token_hash);
-CREATE INDEX idx_magic_links_hash       ON magic_links (token_hash);
-CREATE INDEX idx_email_verify_hash      ON email_verification_tokens (token_hash);
+CREATE OR REPLACE FUNCTION log_audit_event(
+    p_tenant_id      UUID,
+    p_event_type     audit_event_type,
+    p_actor_user_id  UUID    DEFAULT NULL,
+    p_actor_type     TEXT    DEFAULT 'user',
+    p_resource_type  TEXT    DEFAULT NULL,
+    p_resource_id    TEXT    DEFAULT NULL,
+    p_outcome        TEXT    DEFAULT 'success',
+    p_ip_address     INET    DEFAULT NULL,
+    p_application_id UUID    DEFAULT NULL,
+    p_session_id     UUID    DEFAULT NULL,
+    p_metadata       JSONB   DEFAULT NULL,
+    p_severity       audit_severity DEFAULT 'info'
+)
+RETURNS UUID LANGUAGE plpgsql AS $$
+DECLARE v_id UUID; v_prev UUID;
+BEGIN
+    SELECT id INTO v_prev FROM audit_logs WHERE tenant_id = p_tenant_id ORDER BY created_at DESC LIMIT 1;
+    INSERT INTO audit_logs (tenant_id, event_type, severity, actor_user_id, actor_type, resource_type, resource_id, application_id, session_id, ip_address, outcome, metadata, previous_log_id)
+    VALUES (p_tenant_id, p_event_type, p_severity, p_actor_user_id, p_actor_type, p_resource_type, p_resource_id, p_application_id, p_session_id, p_ip_address, p_outcome, p_metadata, v_prev)
+    RETURNING id INTO v_id;
+    RETURN v_id;
+END;
+$$;
 
--- ===========================================================================
--- STEP 7 – RLS HELPER FUNCTIONS
--- ===========================================================================
-CREATE OR REPLACE FUNCTION fn_is_super_admin() RETURNS BOOLEAN
-    LANGUAGE sql STABLE SECURITY DEFINER AS $$
-    SELECT current_setting('app.current_role', TRUE) = 'super_admin'; $$;
+-- ─── Triggers ─────────────────────────────────────────────────
 
-CREATE OR REPLACE FUNCTION fn_current_tenant_id() RETURNS UUID
-    LANGUAGE sql STABLE SECURITY DEFINER AS $$
-    SELECT current_setting('app.current_tenant_id', TRUE)::UUID; $$;
+-- updated_at triggers
+CREATE OR REPLACE FUNCTION set_updated_at() RETURNS TRIGGER LANGUAGE plpgsql AS $$ BEGIN NEW.updated_at := now(); RETURN NEW; END; $$;
 
-CREATE OR REPLACE FUNCTION fn_current_user_id() RETURNS UUID
-    LANGUAGE sql STABLE SECURITY DEFINER AS $$
-    SELECT current_setting('app.current_user_id', TRUE)::UUID; $$;
+DO $$ DECLARE t TEXT; BEGIN
+    FOR t IN SELECT unnest(ARRAY[
+        'tenants','tenant_settings','organizations','applications','roles','users',
+        'user_profiles','user_credentials','mfa_devices','identity_providers',
+        'saml_configurations','oidc_configurations','user_localization_preferences',
+        'tenant_regional_settings','ui_translations','user_consents',
+        'data_retention_policies','pii_deletion_requests','security_events',
+        'rate_limit_configs','pii_data_classifications','api_keys','federated_identities'
+    ])
+    LOOP
+        EXECUTE format(
+            'DROP TRIGGER IF EXISTS trg_%s_updated_at ON %I;
+             CREATE TRIGGER trg_%s_updated_at BEFORE UPDATE ON %I FOR EACH ROW EXECUTE FUNCTION set_updated_at();',
+            t, t, t, t
+        );
+    END LOOP;
+END; $$;
 
--- ===========================================================================
--- STEP 8 – ROW LEVEL SECURITY
--- ===========================================================================
-ALTER TABLE tenants      ENABLE ROW LEVEL SECURITY;
-ALTER TABLE tenant_domains ENABLE ROW LEVEL SECURITY;
-ALTER TABLE users        ENABLE ROW LEVEL SECURITY;
-ALTER TABLE user_passwords ENABLE ROW LEVEL SECURITY;
-ALTER TABLE user_roles   ENABLE ROW LEVEL SECURITY;
-ALTER TABLE applications ENABLE ROW LEVEL SECURITY;
-ALTER TABLE sessions     ENABLE ROW LEVEL SECURITY;
-ALTER TABLE devices      ENABLE ROW LEVEL SECURITY;
-ALTER TABLE mfa_devices  ENABLE ROW LEVEL SECURITY;
-ALTER TABLE mfa_recovery_codes ENABLE ROW LEVEL SECURITY;
-ALTER TABLE mfa_challenges ENABLE ROW LEVEL SECURITY;
-ALTER TABLE oauth_scopes ENABLE ROW LEVEL SECURITY;
-ALTER TABLE application_scopes ENABLE ROW LEVEL SECURITY;
-ALTER TABLE oauth_authorization_codes ENABLE ROW LEVEL SECURITY;
-ALTER TABLE oauth_tokens ENABLE ROW LEVEL SECURITY;
-ALTER TABLE oauth_refresh_tokens ENABLE ROW LEVEL SECURITY;
-ALTER TABLE api_keys     ENABLE ROW LEVEL SECURITY;
-ALTER TABLE identity_providers ENABLE ROW LEVEL SECURITY;
-ALTER TABLE oidc_configurations ENABLE ROW LEVEL SECURITY;
-ALTER TABLE saml_configurations ENABLE ROW LEVEL SECURITY;
-ALTER TABLE federated_identities ENABLE ROW LEVEL SECURITY;
-ALTER TABLE sso_sessions ENABLE ROW LEVEL SECURITY;
-ALTER TABLE user_localization_preferences ENABLE ROW LEVEL SECURITY;
-ALTER TABLE tenant_regional_settings ENABLE ROW LEVEL SECURITY;
-ALTER TABLE ui_translations ENABLE ROW LEVEL SECURITY;
-ALTER TABLE audit_logs   ENABLE ROW LEVEL SECURITY;
-ALTER TABLE security_events ENABLE ROW LEVEL SECURITY;
-ALTER TABLE user_consents ENABLE ROW LEVEL SECURITY;
-ALTER TABLE data_retention_policies ENABLE ROW LEVEL SECURITY;
-ALTER TABLE pii_deletion_requests ENABLE ROW LEVEL SECURITY;
-ALTER TABLE data_export_requests ENABLE ROW LEVEL SECURITY;
-ALTER TABLE webhooks     ENABLE ROW LEVEL SECURITY;
+-- Deletion deadline trigger
+CREATE OR REPLACE FUNCTION set_deletion_deadline() RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN IF NEW.deadline_at IS NULL THEN NEW.deadline_at := NEW.requested_at + INTERVAL '30 days'; END IF; RETURN NEW; END;
+$$;
+DROP TRIGGER IF EXISTS trg_set_deletion_deadline ON pii_deletion_requests;
+CREATE TRIGGER trg_set_deletion_deadline BEFORE INSERT ON pii_deletion_requests FOR EACH ROW EXECUTE FUNCTION set_deletion_deadline();
 
--- Tenant isolation policies (representative set; full set in rls_policies.sql)
-CREATE POLICY rls_tenants ON tenants AS RESTRICTIVE
-    USING (id = fn_current_tenant_id() OR fn_is_super_admin());
-CREATE POLICY rls_users ON users AS RESTRICTIVE
-    USING (tenant_id = fn_current_tenant_id() OR fn_is_super_admin());
-CREATE POLICY rls_sessions ON sessions AS RESTRICTIVE
-    USING (tenant_id = fn_current_tenant_id() OR fn_is_super_admin());
-CREATE POLICY rls_audit_logs ON audit_logs AS RESTRICTIVE
-    USING (tenant_id = fn_current_tenant_id() OR fn_is_super_admin());
+-- ─── Indexes ──────────────────────────────────────────────────
 
--- ===========================================================================
--- STEP 9 – RECORD MIGRATION
--- ===========================================================================
+CREATE INDEX IF NOT EXISTS idx_tenants_slug           ON tenants (slug);
+CREATE INDEX IF NOT EXISTS idx_tenants_status         ON tenants (status) WHERE status <> 'deleted';
+CREATE INDEX IF NOT EXISTS idx_users_tenant           ON users (tenant_id);
+CREATE INDEX IF NOT EXISTS idx_users_email_hash       ON users (tenant_id, email_hash);
+CREATE INDEX IF NOT EXISTS idx_users_status           ON users (tenant_id, status);
+CREATE INDEX IF NOT EXISTS idx_sessions_user          ON user_sessions (user_id, status);
+CREATE INDEX IF NOT EXISTS idx_sessions_expires       ON user_sessions (expires_at) WHERE status = 'active';
+CREATE INDEX IF NOT EXISTS idx_tokens_user            ON oauth_tokens (user_id, token_type, status);
+CREATE INDEX IF NOT EXISTS idx_tokens_expires         ON oauth_tokens (expires_at) WHERE status = 'active';
+CREATE INDEX IF NOT EXISTS idx_audit_tenant           ON audit_logs (tenant_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_actor            ON audit_logs (actor_user_id, created_at DESC) WHERE actor_user_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_mfa_devices_active     ON mfa_devices (user_id, status) WHERE status = 'active';
+CREATE INDEX IF NOT EXISTS idx_pii_del_req_deadline   ON pii_deletion_requests (deadline_at) WHERE status IN ('pending','in_progress');
+CREATE INDEX IF NOT EXISTS idx_audit_created_brin     ON audit_logs USING BRIN (created_at);
+
+-- ─── Record migration ─────────────────────────────────────────
+
 INSERT INTO schema_migrations (version, description)
-VALUES ('001', 'Initial schema: multi-tenant auth framework with UUID v7');
+VALUES ('001', 'Initial schema – multi-tenant auth framework')
+ON CONFLICT (version) DO NOTHING;
 
 COMMIT;

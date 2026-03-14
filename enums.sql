@@ -1,81 +1,79 @@
--- =============================================================================
+-- ============================================================
 -- enums.sql
--- PostgreSQL ENUM type definitions for the multi-tenant auth framework
--- =============================================================================
+-- PostgreSQL ENUM type definitions for the multi-tenant
+-- authentication framework.
+-- ============================================================
 
--- ---------------------------------------------------------------------------
--- Tenant & Organisation
--- ---------------------------------------------------------------------------
+-- ────────────────────────────────────────────────────────────
+-- Tenant / Application
+-- ────────────────────────────────────────────────────────────
 CREATE TYPE tenant_status AS ENUM (
     'active',
     'suspended',
-    'pending_activation',
-    'deactivated',
+    'pending',
     'deleted'
 );
 
-CREATE TYPE tenant_plan AS ENUM (
-    'free',
-    'starter',
-    'professional',
-    'enterprise',
-    'custom'
+CREATE TYPE application_type AS ENUM (
+    'web',
+    'mobile',
+    'spa',           -- Single-Page Application
+    'native',
+    'service',       -- Machine-to-machine / API client
+    'browser_ext'    -- Browser extension
 );
 
--- ---------------------------------------------------------------------------
--- User & Account
--- ---------------------------------------------------------------------------
+-- ────────────────────────────────────────────────────────────
+-- Users & Credentials
+-- ────────────────────────────────────────────────────────────
 CREATE TYPE user_status AS ENUM (
     'active',
     'inactive',
-    'suspended',
-    'pending_verification',
     'locked',
+    'pending_verification',
+    'suspended',
     'deleted'
 );
 
-CREATE TYPE user_role AS ENUM (
-    'super_admin',
-    'tenant_admin',
-    'developer',
-    'end_user',
-    'service_account',
-    'guest'
-);
-
--- ---------------------------------------------------------------------------
--- Authentication
--- ---------------------------------------------------------------------------
-CREATE TYPE auth_method AS ENUM (
+CREATE TYPE credential_type AS ENUM (
     'password',
+    'passkey',      -- WebAuthn passkey
     'magic_link',
-    'passkey',
-    'sso',
-    'oauth',
-    'api_key',
     'certificate'
 );
 
-CREATE TYPE mfa_method AS ENUM (
-    'totp',
+CREATE TYPE user_role_type AS ENUM (
+    'super_admin',
+    'tenant_admin',
+    'app_admin',
+    'user',
+    'guest',
+    'service_account',
+    'read_only'
+);
+
+-- ────────────────────────────────────────────────────────────
+-- MFA
+-- ────────────────────────────────────────────────────────────
+CREATE TYPE mfa_method_type AS ENUM (
+    'totp',      -- Time-based One-Time Password (RFC 6238)
     'sms',
     'email',
-    'webauthn',
-    'push',
-    'backup_code',
-    'hardware_key'
+    'webauthn',  -- FIDO2 / WebAuthn
+    'push',      -- Push notification (Duo, Okta Verify, etc.)
+    'backup_code'
 );
 
-CREATE TYPE mfa_status AS ENUM (
-    'pending',
+CREATE TYPE mfa_device_status AS ENUM (
     'active',
-    'disabled',
-    'revoked'
+    'inactive',
+    'revoked',
+    'pending_activation'
 );
 
--- ---------------------------------------------------------------------------
+-- ────────────────────────────────────────────────────────────
 -- Sessions
--- ---------------------------------------------------------------------------
+-- ────────────────────────────────────────────────────────────
 CREATE TYPE session_status AS ENUM (
     'active',
     'expired',
@@ -83,141 +81,233 @@ CREATE TYPE session_status AS ENUM (
     'logged_out'
 );
 
--- ---------------------------------------------------------------------------
--- OAuth 2.0 / OIDC
--- ---------------------------------------------------------------------------
+-- ────────────────────────────────────────────────────────────
+-- OAuth 2.0
+-- ────────────────────────────────────────────────────────────
 CREATE TYPE oauth_grant_type AS ENUM (
     'authorization_code',
     'client_credentials',
     'refresh_token',
-    'implicit',
     'device_code',
-    'jwt_bearer'
+    'implicit',           -- Legacy – included for compatibility
+    'password'            -- Legacy – included for compatibility
 );
 
 CREATE TYPE oauth_token_type AS ENUM (
     'access_token',
     'refresh_token',
-    'id_token',
-    'device_code',
-    'authorization_code'
+    'id_token'
 );
 
 CREATE TYPE oauth_token_status AS ENUM (
     'active',
     'expired',
-    'revoked',
-    'consumed'
+    'revoked'
 );
 
-CREATE TYPE oauth_client_type AS ENUM (
-    'confidential',
-    'public'
+CREATE TYPE oauth_response_type AS ENUM (
+    'code',
+    'token',
+    'id_token',
+    'code token',
+    'code id_token',
+    'token id_token',
+    'code token id_token'
 );
 
--- ---------------------------------------------------------------------------
+-- Standard OAuth 2.0 + OpenID Connect scopes
+CREATE TYPE oauth_scope_type AS ENUM (
+    'openid',
+    'profile',
+    'email',
+    'phone',
+    'address',
+    'offline_access',
+    'read',
+    'write',
+    'admin',
+    'api',
+    'mfa',
+    'impersonation'
+);
+
+-- ────────────────────────────────────────────────────────────
 -- Identity Providers (IdP)
--- ---------------------------------------------------------------------------
-CREATE TYPE idp_provider_type AS ENUM (
+-- ────────────────────────────────────────────────────────────
+CREATE TYPE idp_type AS ENUM (
+    'saml2',
+    'oidc',
+    'oauth2',
+    'ldap',
+    'active_directory',
     'google',
     'github',
     'microsoft',
-    'auth0',
-    'okta',
+    'apple',
     'facebook',
     'twitter',
-    'apple',
     'linkedin',
-    'slack',
-    'salesforce',
-    'custom_oidc',
-    'custom_saml',
-    'ldap',
-    'active_directory'
-);
-
-CREATE TYPE idp_protocol AS ENUM (
-    'oidc',
-    'saml2',
-    'oauth2',
-    'ldap',
-    'ws_federation',
-    'cas'
+    'auth0',
+    'okta',
+    'onelogin',
+    'pingidentity',
+    'custom'
 );
 
 CREATE TYPE idp_status AS ENUM (
     'active',
-    'disabled',
-    'pending_configuration',
-    'error'
+    'inactive',
+    'testing',
+    'deprecated'
 );
 
--- ---------------------------------------------------------------------------
+CREATE TYPE federated_identity_status AS ENUM (
+    'active',
+    'unlinked',
+    'suspended'
+);
+
+-- ────────────────────────────────────────────────────────────
 -- SSO
--- ---------------------------------------------------------------------------
+-- ────────────────────────────────────────────────────────────
+CREATE TYPE sso_protocol AS ENUM (
+    'saml2',
+    'oidc',
+    'wsfed'    -- WS-Federation
+);
+
 CREATE TYPE sso_session_status AS ENUM (
     'active',
     'expired',
-    'terminated'
+    'logged_out'
 );
 
-CREATE TYPE saml_binding AS ENUM (
-    'http_post',
-    'http_redirect',
-    'http_artifact',
-    'soap'
-);
-
--- ---------------------------------------------------------------------------
--- Security Events & Audit
--- ---------------------------------------------------------------------------
-CREATE TYPE audit_action AS ENUM (
+-- ────────────────────────────────────────────────────────────
+-- Audit & Compliance
+-- ────────────────────────────────────────────────────────────
+CREATE TYPE audit_event_type AS ENUM (
+    -- Authentication
+    'login_success',
+    'login_failure',
+    'logout',
+    'session_expired',
+    'session_revoked',
+    -- MFA
+    'mfa_enrolled',
+    'mfa_verified',
+    'mfa_failed',
+    'mfa_revoked',
+    'recovery_code_used',
+    -- Account lifecycle
     'user_created',
     'user_updated',
     'user_deleted',
-    'user_login',
-    'user_logout',
-    'user_locked',
-    'user_unlocked',
+    'user_suspended',
+    'user_activated',
     'password_changed',
     'password_reset_requested',
-    'password_reset_completed',
-    'mfa_enrolled',
-    'mfa_verified',
-    'mfa_disabled',
-    'mfa_recovery_used',
-    'oauth_token_issued',
-    'oauth_token_revoked',
-    'oauth_authorization_granted',
-    'oauth_authorization_revoked',
-    'sso_session_started',
-    'sso_session_ended',
+    'email_verified',
+    -- OAuth / Tokens
+    'token_issued',
+    'token_refreshed',
+    'token_revoked',
+    'authorization_granted',
+    'authorization_denied',
+    -- SSO / Federation
+    'sso_login',
+    'sso_logout',
     'idp_linked',
     'idp_unlinked',
+    -- Administration
     'tenant_created',
     'tenant_updated',
-    'tenant_deleted',
-    'api_key_created',
-    'api_key_revoked',
     'role_assigned',
     'role_revoked',
+    'permission_granted',
+    'permission_revoked',
+    -- Compliance
     'consent_given',
-    'consent_revoked',
+    'consent_withdrawn',
     'data_export_requested',
     'data_deletion_requested',
     'data_deleted',
-    'policy_updated',
-    'config_changed',
-    'security_alert',
+    -- Security
     'suspicious_activity',
-    'brute_force_detected',
+    'rate_limit_exceeded',
     'ip_blocked',
-    'device_trusted',
-    'device_revoked'
+    'brute_force_detected',
+    'api_key_created',
+    'api_key_revoked'
 );
 
-CREATE TYPE security_event_severity AS ENUM (
+CREATE TYPE audit_severity AS ENUM (
     'info',
+    'warning',
+    'error',
+    'critical'
+);
+
+-- ────────────────────────────────────────────────────────────
+-- Consent & GDPR
+-- ────────────────────────────────────────────────────────────
+CREATE TYPE consent_type AS ENUM (
+    'terms_of_service',
+    'privacy_policy',
+    'cookie_policy',
+    'marketing_emails',
+    'analytics',
+    'data_processing',
+    'data_sharing',
+    'third_party_integrations',
+    'biometric_data',
+    'geolocation'
+);
+
+CREATE TYPE consent_status AS ENUM (
+    'granted',
+    'withdrawn',
+    'expired',
+    'pending'
+);
+
+CREATE TYPE deletion_request_status AS ENUM (
+    'pending',
+    'in_progress',
+    'completed',
+    'failed',
+    'cancelled'
+);
+
+-- ────────────────────────────────────────────────────────────
+-- PII & Data Classification
+-- ────────────────────────────────────────────────────────────
+CREATE TYPE pii_classification AS ENUM (
+    'public',
+    'internal',
+    'confidential',
+    'restricted',   -- e.g., passwords, MFA secrets
+    'sensitive_pii', -- GDPR special categories, US regulated PII
+    'financial',
+    'health'
+);
+
+CREATE TYPE pii_regulation AS ENUM (
+    'gdpr',       -- EU General Data Protection Regulation
+    'ccpa',       -- California Consumer Privacy Act
+    'hipaa',      -- US Health Insurance Portability and Accountability Act
+    'coppa',      -- Children's Online Privacy Protection Act
+    'pipeda',     -- Canada
+    'lgpd',       -- Brazil
+    'pdpa',       -- Thailand / Singapore
+    'eidas',      -- EU electronic identification
+    'ferpa',      -- US Family Educational Rights and Privacy Act
+    'glba'        -- US Gramm–Leach–Bliley Act
+);
+
+-- ────────────────────────────────────────────────────────────
+-- Security
+-- ────────────────────────────────────────────────────────────
+CREATE TYPE risk_level AS ENUM (
     'low',
     'medium',
     'high',
@@ -225,114 +315,58 @@ CREATE TYPE security_event_severity AS ENUM (
 );
 
 CREATE TYPE security_event_type AS ENUM (
-    'login_failure',
     'brute_force',
     'credential_stuffing',
     'account_takeover',
-    'suspicious_location',
+    'bot_activity',
     'impossible_travel',
-    'device_anomaly',
-    'token_abuse',
-    'privilege_escalation',
-    'data_exfiltration',
-    'policy_violation',
-    'anomalous_behavior'
+    'new_device',
+    'new_location',
+    'leaked_credential',
+    'suspicious_ip',
+    'anomalous_behavior',
+    'privilege_escalation'
 );
 
--- ---------------------------------------------------------------------------
--- Compliance & GDPR
--- ---------------------------------------------------------------------------
-CREATE TYPE consent_type AS ENUM (
-    'terms_of_service',
-    'privacy_policy',
-    'marketing_emails',
-    'analytics_tracking',
-    'data_sharing',
-    'cookie_consent',
-    'data_processing',
-    'cross_border_transfer'
+CREATE TYPE security_event_status AS ENUM (
+    'open',
+    'investigating',
+    'mitigated',
+    'resolved',
+    'false_positive'
 );
 
-CREATE TYPE consent_status AS ENUM (
-    'given',
-    'withdrawn',
-    'pending',
-    'expired'
+CREATE TYPE device_trust_level AS ENUM (
+    'unknown',
+    'unverified',
+    'verified',
+    'managed'
 );
 
-CREATE TYPE data_deletion_status AS ENUM (
-    'requested',
-    'in_progress',
-    'completed',
-    'failed',
-    'cancelled'
+-- ────────────────────────────────────────────────────────────
+-- Regional / Localization
+-- ────────────────────────────────────────────────────────────
+CREATE TYPE data_residency_region AS ENUM (
+    'us',
+    'eu',
+    'uk',
+    'ca',
+    'au',
+    'ap',
+    'global'
 );
 
-CREATE TYPE data_classification AS ENUM (
-    'public',
-    'internal',
-    'confidential',
-    'restricted',
-    'pii',
-    'sensitive_pii',
-    'phi',
-    'financial'
-);
-
-CREATE TYPE retention_policy_type AS ENUM (
-    'delete',
-    'anonymize',
-    'archive',
-    'retain'
-);
-
-CREATE TYPE regulation_type AS ENUM (
-    'gdpr',
-    'ccpa',
-    'hipaa',
-    'pci_dss',
-    'sox',
-    'eidas',
-    'lgpd',
-    'pipeda',
-    'pdpa',
-    'appi'
-);
-
--- ---------------------------------------------------------------------------
--- Device & Geolocation
--- ---------------------------------------------------------------------------
-CREATE TYPE device_type AS ENUM (
-    'desktop',
-    'mobile',
-    'tablet',
-    'smart_tv',
-    'iot',
-    'unknown'
-);
-
-CREATE TYPE device_trust_status AS ENUM (
-    'trusted',
-    'untrusted',
-    'pending_verification',
-    'revoked'
-);
-
--- ---------------------------------------------------------------------------
--- API Keys
--- ---------------------------------------------------------------------------
-CREATE TYPE api_key_status AS ENUM (
-    'active',
-    'revoked',
-    'expired'
-);
-
--- ---------------------------------------------------------------------------
--- Password / Credential
--- ---------------------------------------------------------------------------
-CREATE TYPE password_hash_algorithm AS ENUM (
-    'argon2id',
-    'bcrypt',
-    'scrypt',
-    'pbkdf2'
+CREATE TYPE regulation_region AS ENUM (
+    'eu',
+    'us',
+    'us_california',
+    'us_virginia',
+    'uk',
+    'canada',
+    'brazil',
+    'australia',
+    'india',
+    'singapore',
+    'japan',
+    'global'
 );

@@ -1,267 +1,345 @@
--- =============================================================================
+-- ============================================================
 -- seed_data.sql
--- Reference / seed data for the multi-tenant authentication framework.
--- Includes: languages, timezones, OAuth scopes, IdP templates.
--- Note: All IDs use uuid_generate_v7() – they are inserted literally here
---       with gen_random_uuid() so the file can be executed standalone.
---       In production these values are stable and referenced by client apps.
--- =============================================================================
+-- Reference / sample data for the multi-tenant authentication
+-- framework.
+--
+-- Prerequisites: enums.sql + schema.sql must be run first.
+-- This file is safe to run in both development and production
+-- environments. It uses ON CONFLICT DO NOTHING so it is
+-- idempotent.
+-- ============================================================
 
--- ---------------------------------------------------------------------------
--- Languages (ISO 639-1 codes)
--- ---------------------------------------------------------------------------
-INSERT INTO languages (id, code, name, native_name, direction, is_active)
-VALUES
-    (gen_random_uuid(), 'en',    'English',              'English',              'ltr', TRUE),
-    (gen_random_uuid(), 'es',    'Spanish',              'Español',              'ltr', TRUE),
-    (gen_random_uuid(), 'fr',    'French',               'Français',             'ltr', TRUE),
-    (gen_random_uuid(), 'de',    'German',               'Deutsch',              'ltr', TRUE),
-    (gen_random_uuid(), 'pt',    'Portuguese',           'Português',            'ltr', TRUE),
-    (gen_random_uuid(), 'pt-BR', 'Portuguese (Brazil)',  'Português (Brasil)',   'ltr', TRUE),
-    (gen_random_uuid(), 'it',    'Italian',              'Italiano',             'ltr', TRUE),
-    (gen_random_uuid(), 'nl',    'Dutch',                'Nederlands',           'ltr', TRUE),
-    (gen_random_uuid(), 'pl',    'Polish',               'Polski',               'ltr', TRUE),
-    (gen_random_uuid(), 'sv',    'Swedish',              'Svenska',              'ltr', TRUE),
-    (gen_random_uuid(), 'da',    'Danish',               'Dansk',                'ltr', TRUE),
-    (gen_random_uuid(), 'fi',    'Finnish',              'Suomi',                'ltr', TRUE),
-    (gen_random_uuid(), 'nb',    'Norwegian Bokmål',     'Norsk bokmål',         'ltr', TRUE),
-    (gen_random_uuid(), 'ru',    'Russian',              'Русский',              'ltr', TRUE),
-    (gen_random_uuid(), 'uk',    'Ukrainian',            'Українська',           'ltr', TRUE),
-    (gen_random_uuid(), 'cs',    'Czech',                'Čeština',              'ltr', TRUE),
-    (gen_random_uuid(), 'ro',    'Romanian',             'Română',               'ltr', TRUE),
-    (gen_random_uuid(), 'hu',    'Hungarian',            'Magyar',               'ltr', TRUE),
-    (gen_random_uuid(), 'tr',    'Turkish',              'Türkçe',               'ltr', TRUE),
-    (gen_random_uuid(), 'ja',    'Japanese',             '日本語',               'ltr', TRUE),
-    (gen_random_uuid(), 'ko',    'Korean',               '한국어',               'ltr', TRUE),
-    (gen_random_uuid(), 'zh-CN', 'Chinese (Simplified)', '中文（简体）',         'ltr', TRUE),
-    (gen_random_uuid(), 'zh-TW', 'Chinese (Traditional)','中文（繁體）',         'ltr', TRUE),
-    (gen_random_uuid(), 'ar',    'Arabic',               'العربية',              'rtl', TRUE),
-    (gen_random_uuid(), 'he',    'Hebrew',               'עברית',                'rtl', TRUE),
-    (gen_random_uuid(), 'fa',    'Persian',              'فارسی',                'rtl', TRUE),
-    (gen_random_uuid(), 'hi',    'Hindi',                'हिन्दी',               'ltr', TRUE),
-    (gen_random_uuid(), 'th',    'Thai',                 'ภาษาไทย',              'ltr', TRUE),
-    (gen_random_uuid(), 'id',    'Indonesian',           'Bahasa Indonesia',     'ltr', TRUE),
-    (gen_random_uuid(), 'ms',    'Malay',                'Bahasa Melayu',        'ltr', TRUE),
-    (gen_random_uuid(), 'vi',    'Vietnamese',           'Tiếng Việt',           'ltr', TRUE)
+-- ────────────────────────────────────────────────────────────
+-- 1. Languages (BCP-47 codes)
+-- ────────────────────────────────────────────────────────────
+INSERT INTO languages (code, name, native_name, is_rtl, is_active, sort_order) VALUES
+    ('en',    'English',             'English',                 FALSE, TRUE, 1),
+    ('en-US', 'English (US)',        'English (US)',            FALSE, TRUE, 2),
+    ('en-GB', 'English (UK)',        'English (UK)',            FALSE, TRUE, 3),
+    ('fr',    'French',              'Français',                FALSE, TRUE, 10),
+    ('fr-FR', 'French (France)',     'Français (France)',       FALSE, TRUE, 11),
+    ('de',    'German',              'Deutsch',                 FALSE, TRUE, 20),
+    ('de-DE', 'German (Germany)',    'Deutsch (Deutschland)',   FALSE, TRUE, 21),
+    ('es',    'Spanish',             'Español',                 FALSE, TRUE, 30),
+    ('es-ES', 'Spanish (Spain)',     'Español (España)',        FALSE, TRUE, 31),
+    ('es-MX', 'Spanish (Mexico)',    'Español (México)',        FALSE, TRUE, 32),
+    ('pt',    'Portuguese',          'Português',               FALSE, TRUE, 40),
+    ('pt-BR', 'Portuguese (Brazil)', 'Português (Brasil)',      FALSE, TRUE, 41),
+    ('pt-PT', 'Portuguese (Portugal)','Português (Portugal)',   FALSE, TRUE, 42),
+    ('it',    'Italian',             'Italiano',                FALSE, TRUE, 50),
+    ('nl',    'Dutch',               'Nederlands',              FALSE, TRUE, 60),
+    ('pl',    'Polish',              'Polski',                  FALSE, TRUE, 70),
+    ('ru',    'Russian',             'Русский',                 FALSE, TRUE, 80),
+    ('ja',    'Japanese',            '日本語',                  FALSE, TRUE, 90),
+    ('zh',    'Chinese',             '中文',                    FALSE, TRUE, 100),
+    ('zh-CN', 'Chinese (Simplified)','中文（简体）',             FALSE, TRUE, 101),
+    ('zh-TW', 'Chinese (Traditional)','中文（繁體）',            FALSE, TRUE, 102),
+    ('ko',    'Korean',              '한국어',                  FALSE, TRUE, 110),
+    ('ar',    'Arabic',              'العربية',                  TRUE, TRUE, 120),
+    ('he',    'Hebrew',              'עברית',                    TRUE, TRUE, 130),
+    ('hi',    'Hindi',               'हिन्दी',                 FALSE, TRUE, 140),
+    ('tr',    'Turkish',             'Türkçe',                  FALSE, TRUE, 150),
+    ('sv',    'Swedish',             'Svenska',                 FALSE, TRUE, 160),
+    ('da',    'Danish',              'Dansk',                   FALSE, TRUE, 170),
+    ('fi',    'Finnish',             'Suomi',                   FALSE, TRUE, 180),
+    ('nb',    'Norwegian Bokmål',    'Norsk Bokmål',            FALSE, TRUE, 190),
+    ('cs',    'Czech',               'Čeština',                 FALSE, TRUE, 200),
+    ('hu',    'Hungarian',           'Magyar',                  FALSE, TRUE, 210),
+    ('ro',    'Romanian',            'Română',                  FALSE, TRUE, 220),
+    ('uk',    'Ukrainian',           'Українська',              FALSE, TRUE, 230),
+    ('id',    'Indonesian',          'Bahasa Indonesia',        FALSE, TRUE, 240),
+    ('ms',    'Malay',               'Bahasa Melayu',           FALSE, TRUE, 250),
+    ('th',    'Thai',                'ภาษาไทย',                FALSE, TRUE, 260),
+    ('vi',    'Vietnamese',          'Tiếng Việt',              FALSE, TRUE, 270)
 ON CONFLICT (code) DO NOTHING;
 
--- ---------------------------------------------------------------------------
--- Timezones (representative subset of the IANA timezone database)
--- ---------------------------------------------------------------------------
-INSERT INTO timezones (id, name, display_name, offset_seconds, region, is_active)
-VALUES
-    -- UTC
-    (gen_random_uuid(), 'UTC',                    'UTC',                              0,         'Global', TRUE),
-    -- Americas
-    (gen_random_uuid(), 'America/New_York',        'Eastern Time (US & Canada)',    -18000,    'Americas', TRUE),
-    (gen_random_uuid(), 'America/Chicago',         'Central Time (US & Canada)',    -21600,    'Americas', TRUE),
-    (gen_random_uuid(), 'America/Denver',          'Mountain Time (US & Canada)',   -25200,    'Americas', TRUE),
-    (gen_random_uuid(), 'America/Los_Angeles',     'Pacific Time (US & Canada)',    -28800,    'Americas', TRUE),
-    (gen_random_uuid(), 'America/Anchorage',       'Alaska',                        -32400,    'Americas', TRUE),
-    (gen_random_uuid(), 'Pacific/Honolulu',        'Hawaii',                        -36000,    'Americas', TRUE),
-    (gen_random_uuid(), 'America/Sao_Paulo',       'Brasilia',                      -10800,    'Americas', TRUE),
-    (gen_random_uuid(), 'America/Argentina/Buenos_Aires', 'Buenos Aires',           -10800,    'Americas', TRUE),
-    (gen_random_uuid(), 'America/Mexico_City',     'Mexico City',                   -21600,    'Americas', TRUE),
-    (gen_random_uuid(), 'America/Toronto',         'Eastern Time (Canada)',         -18000,    'Americas', TRUE),
-    (gen_random_uuid(), 'America/Vancouver',       'Pacific Time (Canada)',         -28800,    'Americas', TRUE),
-    -- Europe
-    (gen_random_uuid(), 'Europe/London',           'London',                             0,    'Europe',   TRUE),
-    (gen_random_uuid(), 'Europe/Dublin',           'Dublin',                             0,    'Europe',   TRUE),
-    (gen_random_uuid(), 'Europe/Paris',            'Paris',                          3600,    'Europe',   TRUE),
-    (gen_random_uuid(), 'Europe/Berlin',           'Berlin',                         3600,    'Europe',   TRUE),
-    (gen_random_uuid(), 'Europe/Amsterdam',        'Amsterdam',                      3600,    'Europe',   TRUE),
-    (gen_random_uuid(), 'Europe/Madrid',           'Madrid',                         3600,    'Europe',   TRUE),
-    (gen_random_uuid(), 'Europe/Rome',             'Rome',                           3600,    'Europe',   TRUE),
-    (gen_random_uuid(), 'Europe/Warsaw',           'Warsaw',                         3600,    'Europe',   TRUE),
-    (gen_random_uuid(), 'Europe/Bucharest',        'Bucharest',                      7200,    'Europe',   TRUE),
-    (gen_random_uuid(), 'Europe/Helsinki',         'Helsinki',                       7200,    'Europe',   TRUE),
-    (gen_random_uuid(), 'Europe/Athens',           'Athens',                         7200,    'Europe',   TRUE),
-    (gen_random_uuid(), 'Europe/Moscow',           'Moscow',                        10800,    'Europe',   TRUE),
-    (gen_random_uuid(), 'Europe/Istanbul',         'Istanbul',                      10800,    'Europe',   TRUE),
-    -- Asia / Pacific
-    (gen_random_uuid(), 'Asia/Dubai',              'Abu Dhabi, Dubai',              14400,    'Asia',     TRUE),
-    (gen_random_uuid(), 'Asia/Karachi',            'Karachi',                       18000,    'Asia',     TRUE),
-    (gen_random_uuid(), 'Asia/Kolkata',            'Mumbai, Kolkata',               19800,    'Asia',     TRUE),
-    (gen_random_uuid(), 'Asia/Dhaka',              'Dhaka',                         21600,    'Asia',     TRUE),
-    (gen_random_uuid(), 'Asia/Bangkok',            'Bangkok, Hanoi',                25200,    'Asia',     TRUE),
-    (gen_random_uuid(), 'Asia/Singapore',          'Singapore',                     28800,    'Asia',     TRUE),
-    (gen_random_uuid(), 'Asia/Kuala_Lumpur',       'Kuala Lumpur',                  28800,    'Asia',     TRUE),
-    (gen_random_uuid(), 'Asia/Hong_Kong',          'Hong Kong',                     28800,    'Asia',     TRUE),
-    (gen_random_uuid(), 'Asia/Shanghai',           'Beijing, Shanghai',             28800,    'Asia',     TRUE),
-    (gen_random_uuid(), 'Asia/Taipei',             'Taipei',                        28800,    'Asia',     TRUE),
-    (gen_random_uuid(), 'Asia/Tokyo',              'Tokyo, Osaka',                  32400,    'Asia',     TRUE),
-    (gen_random_uuid(), 'Asia/Seoul',              'Seoul',                         32400,    'Asia',     TRUE),
-    (gen_random_uuid(), 'Australia/Sydney',        'Sydney, Melbourne',             36000,    'Pacific',  TRUE),
-    (gen_random_uuid(), 'Australia/Brisbane',      'Brisbane',                      36000,    'Pacific',  TRUE),
-    (gen_random_uuid(), 'Australia/Perth',         'Perth',                         28800,    'Pacific',  TRUE),
-    (gen_random_uuid(), 'Pacific/Auckland',        'Auckland',                      43200,    'Pacific',  TRUE),
-    -- Africa / Middle East
-    (gen_random_uuid(), 'Africa/Johannesburg',     'Johannesburg',                   7200,    'Africa',   TRUE),
-    (gen_random_uuid(), 'Africa/Cairo',            'Cairo',                          7200,    'Africa',   TRUE),
-    (gen_random_uuid(), 'Africa/Nairobi',          'Nairobi',                       10800,    'Africa',   TRUE),
-    (gen_random_uuid(), 'Africa/Lagos',            'Lagos',                          3600,    'Africa',   TRUE),
-    (gen_random_uuid(), 'Asia/Jerusalem',          'Jerusalem',                      7200,    'Asia',     TRUE),
-    (gen_random_uuid(), 'Asia/Riyadh',             'Riyadh',                        10800,    'Asia',     TRUE)
+-- ────────────────────────────────────────────────────────────
+-- 2. Timezones (representative IANA names)
+-- ────────────────────────────────────────────────────────────
+INSERT INTO timezones (name, abbreviation, utc_offset, has_dst, region) VALUES
+    ('UTC',                    'UTC',   '0 hours',     FALSE, 'Global'),
+    ('America/New_York',       'EST',   '-5 hours',    TRUE,  'Americas'),
+    ('America/Chicago',        'CST',   '-6 hours',    TRUE,  'Americas'),
+    ('America/Denver',         'MST',   '-7 hours',    TRUE,  'Americas'),
+    ('America/Los_Angeles',    'PST',   '-8 hours',    TRUE,  'Americas'),
+    ('America/Anchorage',      'AKST',  '-9 hours',    TRUE,  'Americas'),
+    ('Pacific/Honolulu',       'HST',   '-10 hours',   FALSE, 'Pacific'),
+    ('America/Toronto',        'EST',   '-5 hours',    TRUE,  'Americas'),
+    ('America/Vancouver',      'PST',   '-8 hours',    TRUE,  'Americas'),
+    ('America/Sao_Paulo',      'BRT',   '-3 hours',    TRUE,  'Americas'),
+    ('America/Mexico_City',    'CST',   '-6 hours',    TRUE,  'Americas'),
+    ('America/Buenos_Aires',   'ART',   '-3 hours',    FALSE, 'Americas'),
+    ('America/Bogota',         'COT',   '-5 hours',    FALSE, 'Americas'),
+    ('America/Lima',           'PET',   '-5 hours',    FALSE, 'Americas'),
+    ('Europe/London',          'GMT',   '0 hours',     TRUE,  'Europe'),
+    ('Europe/Paris',           'CET',   '1 hour',      TRUE,  'Europe'),
+    ('Europe/Berlin',          'CET',   '1 hour',      TRUE,  'Europe'),
+    ('Europe/Madrid',          'CET',   '1 hour',      TRUE,  'Europe'),
+    ('Europe/Rome',            'CET',   '1 hour',      TRUE,  'Europe'),
+    ('Europe/Amsterdam',       'CET',   '1 hour',      TRUE,  'Europe'),
+    ('Europe/Brussels',        'CET',   '1 hour',      TRUE,  'Europe'),
+    ('Europe/Warsaw',          'CET',   '1 hour',      TRUE,  'Europe'),
+    ('Europe/Stockholm',       'CET',   '1 hour',      TRUE,  'Europe'),
+    ('Europe/Oslo',            'CET',   '1 hour',      TRUE,  'Europe'),
+    ('Europe/Copenhagen',      'CET',   '1 hour',      TRUE,  'Europe'),
+    ('Europe/Helsinki',        'EET',   '2 hours',     TRUE,  'Europe'),
+    ('Europe/Athens',          'EET',   '2 hours',     TRUE,  'Europe'),
+    ('Europe/Bucharest',       'EET',   '2 hours',     TRUE,  'Europe'),
+    ('Europe/Kiev',            'EET',   '2 hours',     TRUE,  'Europe'),
+    ('Europe/Moscow',          'MSK',   '3 hours',     FALSE, 'Europe'),
+    ('Asia/Dubai',             'GST',   '4 hours',     FALSE, 'Asia'),
+    ('Asia/Karachi',           'PKT',   '5 hours',     FALSE, 'Asia'),
+    ('Asia/Kolkata',           'IST',   '5 hours 30 minutes', FALSE, 'Asia'),
+    ('Asia/Dhaka',             'BST',   '6 hours',     FALSE, 'Asia'),
+    ('Asia/Bangkok',           'ICT',   '7 hours',     FALSE, 'Asia'),
+    ('Asia/Singapore',         'SGT',   '8 hours',     FALSE, 'Asia'),
+    ('Asia/Hong_Kong',         'HKT',   '8 hours',     FALSE, 'Asia'),
+    ('Asia/Shanghai',          'CST',   '8 hours',     FALSE, 'Asia'),
+    ('Asia/Taipei',            'CST',   '8 hours',     FALSE, 'Asia'),
+    ('Asia/Seoul',             'KST',   '9 hours',     FALSE, 'Asia'),
+    ('Asia/Tokyo',             'JST',   '9 hours',     FALSE, 'Asia'),
+    ('Australia/Perth',        'AWST',  '8 hours',     FALSE, 'Oceania'),
+    ('Australia/Adelaide',     'ACST',  '9 hours 30 minutes', TRUE, 'Oceania'),
+    ('Australia/Sydney',       'AEST',  '10 hours',    TRUE,  'Oceania'),
+    ('Pacific/Auckland',       'NZST',  '12 hours',    TRUE,  'Pacific'),
+    ('Africa/Cairo',           'EET',   '2 hours',     FALSE, 'Africa'),
+    ('Africa/Johannesburg',    'SAST',  '2 hours',     FALSE, 'Africa'),
+    ('Africa/Lagos',           'WAT',   '1 hour',      FALSE, 'Africa'),
+    ('Africa/Nairobi',         'EAT',   '3 hours',     FALSE, 'Africa')
 ON CONFLICT (name) DO NOTHING;
 
--- ---------------------------------------------------------------------------
--- System tenant (used for platform-level OAuth scopes)
--- ---------------------------------------------------------------------------
+-- ────────────────────────────────────────────────────────────
+-- 3. Global OAuth Scopes (tenant_id NULL = global)
+-- ────────────────────────────────────────────────────────────
+-- We use a placeholder tenant that does NOT exist so ON CONFLICT
+-- is safe; applications will create their own per-tenant scopes.
+-- Global scopes reference a well-known nil UUID for tenant_id.
+-- In production, insert per-tenant scopes via the app layer.
+
+-- Standard OpenID Connect / OAuth 2.0 scopes (global templates)
+-- Note: tenant_id is NOT NULL in the schema, so we use a temporary
+-- variable referencing the first created tenant. Applications
+-- should seed these per tenant. Below we show the pattern.
+-- Since we cannot reference a tenant that doesn't exist yet,
+-- we document the typical scope set. The application layer should
+-- call this after creating the first tenant.
+
 DO $$
 DECLARE
-    v_system_tenant_id UUID := '018f4d7e-7c00-7000-8000-000000000001'::UUID;
+    v_first_tenant UUID;
 BEGIN
-    INSERT INTO tenants (
-        id, name, slug, display_name, status, plan,
-        default_language, default_timezone,
-        security_settings
-    ) VALUES (
-        v_system_tenant_id,
-        'System',
-        'system',
-        'Platform System Tenant',
-        'active',
-        'enterprise',
-        'en',
-        'UTC',
-        '{}'
-    ) ON CONFLICT (slug) DO NOTHING;
+    -- Only seed if at least one tenant exists
+    SELECT id INTO v_first_tenant FROM tenants LIMIT 1;
 
-    -- ---------------------------------------------------------------------------
-    -- Standard OAuth 2.0 / OIDC scopes
-    -- ---------------------------------------------------------------------------
-    INSERT INTO oauth_scopes (id, tenant_id, name, description, is_default, is_public)
-    VALUES
-        (gen_random_uuid(), v_system_tenant_id, 'openid',
-            'OpenID Connect identity token', TRUE, TRUE),
-        (gen_random_uuid(), v_system_tenant_id, 'profile',
-            'User profile information (name, locale, picture)', FALSE, TRUE),
-        (gen_random_uuid(), v_system_tenant_id, 'email',
-            'User email address', FALSE, TRUE),
-        (gen_random_uuid(), v_system_tenant_id, 'phone',
-            'User phone number', FALSE, TRUE),
-        (gen_random_uuid(), v_system_tenant_id, 'address',
-            'User postal address', FALSE, TRUE),
-        (gen_random_uuid(), v_system_tenant_id, 'offline_access',
-            'Issue refresh tokens for offline access', FALSE, TRUE),
-        (gen_random_uuid(), v_system_tenant_id, 'roles',
-            'User roles and permissions', FALSE, FALSE),
-        (gen_random_uuid(), v_system_tenant_id, 'mfa',
-            'MFA verification status', FALSE, FALSE),
-        (gen_random_uuid(), v_system_tenant_id, 'tenant',
-            'Tenant-level information', FALSE, FALSE)
-    ON CONFLICT (tenant_id, name) DO NOTHING;
-END
+    IF v_first_tenant IS NOT NULL THEN
+        INSERT INTO oauth_scopes (tenant_id, name, description, is_default, is_public) VALUES
+            (v_first_tenant, 'openid',         'OpenID Connect: request the use of the OpenID Connect protocol',           TRUE,  TRUE),
+            (v_first_tenant, 'profile',         'Access basic profile information (name, picture, website)',                TRUE,  TRUE),
+            (v_first_tenant, 'email',           'Access the user''s email address',                                        TRUE,  TRUE),
+            (v_first_tenant, 'phone',           'Access the user''s phone number',                                         FALSE, TRUE),
+            (v_first_tenant, 'address',         'Access the user''s physical address',                                     FALSE, TRUE),
+            (v_first_tenant, 'offline_access',  'Issue a refresh token for long-lived access',                             FALSE, TRUE),
+            (v_first_tenant, 'read',            'Read-only access to resources',                                           FALSE, TRUE),
+            (v_first_tenant, 'write',           'Write access to resources',                                               FALSE, FALSE),
+            (v_first_tenant, 'admin',           'Administrative access',                                                   FALSE, FALSE),
+            (v_first_tenant, 'mfa',             'Confirm or manage MFA settings',                                          FALSE, FALSE)
+        ON CONFLICT (tenant_id, name) DO NOTHING;
+    END IF;
+END;
 $$;
 
--- ---------------------------------------------------------------------------
--- Identity Provider templates (no tenant – global reference rows)
--- These serve as documentation / default configs; each tenant copies/extends them.
--- ---------------------------------------------------------------------------
+-- ────────────────────────────────────────────────────────────
+-- 4. Sample Identity Provider templates
+--    (status = 'inactive' so they require configuration before use)
+-- ────────────────────────────────────────────────────────────
 DO $$
 DECLARE
-    v_system_tenant_id UUID := '018f4d7e-7c00-7000-8000-000000000001'::UUID;
+    v_first_tenant UUID;
 BEGIN
-    INSERT INTO identity_providers (
-        id, tenant_id, name, display_name, logo_url,
-        provider_type, protocol, status,
-        attribute_mapping, auto_provision_users, default_role, display_order
-    ) VALUES
-    (
-        gen_random_uuid(), v_system_tenant_id,
-        'google', 'Sign in with Google',
-        'https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg',
-        'google', 'oidc', 'disabled',
-        '{"sub":"external_subject","email":"email","name":"display_name","picture":"avatar_url"}',
-        TRUE, 'end_user', 1
-    ),
-    (
-        gen_random_uuid(), v_system_tenant_id,
-        'github', 'Sign in with GitHub',
-        'https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png',
-        'github', 'oauth2', 'disabled',
-        '{"id":"external_subject","email":"email","login":"display_name","avatar_url":"avatar_url"}',
-        TRUE, 'end_user', 2
-    ),
-    (
-        gen_random_uuid(), v_system_tenant_id,
-        'microsoft', 'Sign in with Microsoft',
-        'https://learn.microsoft.com/en-us/azure/active-directory/develop/media/howto-add-branding-in-apps/ms-symbollockup_mssymbol_19.png',
-        'microsoft', 'oidc', 'disabled',
-        '{"oid":"external_subject","email":"email","name":"display_name","preferred_username":"email"}',
-        TRUE, 'end_user', 3
-    ),
-    (
-        gen_random_uuid(), v_system_tenant_id,
-        'auth0', 'Sign in with Auth0',
-        NULL,
-        'auth0', 'oidc', 'disabled',
-        '{"sub":"external_subject","email":"email","name":"display_name","picture":"avatar_url"}',
-        TRUE, 'end_user', 4
-    ),
-    (
-        gen_random_uuid(), v_system_tenant_id,
-        'okta', 'Sign in with Okta',
-        NULL,
-        'okta', 'oidc', 'disabled',
-        '{"sub":"external_subject","email":"email","name":"display_name"}',
-        TRUE, 'end_user', 5
-    )
-    ON CONFLICT DO NOTHING;
-END
+    SELECT id INTO v_first_tenant FROM tenants LIMIT 1;
+
+    IF v_first_tenant IS NOT NULL THEN
+        INSERT INTO identity_providers
+            (tenant_id, name, slug, provider_type, status,
+             authorization_endpoint, token_endpoint, userinfo_endpoint,
+             jwks_uri, logo_url, button_label, auto_provision, config)
+        VALUES
+        -- Google
+        (v_first_tenant,
+         'Google', 'google', 'google', 'inactive',
+         'https://accounts.google.com/o/oauth2/v2/auth',
+         'https://oauth2.googleapis.com/token',
+         'https://www.googleapis.com/oauth2/v3/userinfo',
+         'https://www.googleapis.com/oauth2/v3/certs',
+         'https://www.gstatic.com/images/branding/product/1x/gsa_512dp.png',
+         'Continue with Google',
+         TRUE,
+         '{"scopes": ["openid", "profile", "email"]}'::jsonb),
+
+        -- GitHub
+        (v_first_tenant,
+         'GitHub', 'github', 'github', 'inactive',
+         'https://github.com/login/oauth/authorize',
+         'https://github.com/login/oauth/access_token',
+         'https://api.github.com/user',
+         NULL,
+         'https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png',
+         'Continue with GitHub',
+         TRUE,
+         '{"scopes": ["read:user", "user:email"]}'::jsonb),
+
+        -- Microsoft
+        (v_first_tenant,
+         'Microsoft', 'microsoft', 'microsoft', 'inactive',
+         'https://login.microsoftonline.com/common/oauth2/v2.0/authorize',
+         'https://login.microsoftonline.com/common/oauth2/v2.0/token',
+         'https://graph.microsoft.com/oidc/userinfo',
+         'https://login.microsoftonline.com/common/discovery/v2.0/keys',
+         'https://learn.microsoft.com/en-us/azure/active-directory/develop/media/howto-add-branding-in-azure-ad-apps/ms-symbollockup_mssymbol_19.svg',
+         'Continue with Microsoft',
+         TRUE,
+         '{"scopes": ["openid", "profile", "email", "User.Read"]}'::jsonb),
+
+        -- Auth0
+        (v_first_tenant,
+         'Auth0', 'auth0', 'auth0', 'inactive',
+         'https://{your-domain}.auth0.com/authorize',
+         'https://{your-domain}.auth0.com/oauth/token',
+         'https://{your-domain}.auth0.com/userinfo',
+         'https://{your-domain}.auth0.com/.well-known/jwks.json',
+         NULL,
+         'Continue with Auth0',
+         TRUE,
+         '{"scopes": ["openid", "profile", "email"]}'::jsonb),
+
+        -- Okta
+        (v_first_tenant,
+         'Okta', 'okta', 'okta', 'inactive',
+         'https://{your-domain}.okta.com/oauth2/v1/authorize',
+         'https://{your-domain}.okta.com/oauth2/v1/token',
+         'https://{your-domain}.okta.com/oauth2/v1/userinfo',
+         'https://{your-domain}.okta.com/oauth2/v1/keys',
+         NULL,
+         'Continue with Okta',
+         TRUE,
+         '{"scopes": ["openid", "profile", "email"]}'::jsonb)
+
+        ON CONFLICT (tenant_id, slug) DO NOTHING;
+    END IF;
+END;
 $$;
 
--- ---------------------------------------------------------------------------
--- Default data retention policies for system tenant
--- ---------------------------------------------------------------------------
+-- ────────────────────────────────────────────────────────────
+-- 5. PII Data Classification registry (global – tenant_id NULL)
+--    Documents which columns hold PII and under which regulations.
+-- ────────────────────────────────────────────────────────────
+INSERT INTO pii_data_classifications
+    (tenant_id, table_name, column_name, classification, regulations, is_encrypted, notes)
+VALUES
+    -- users
+    (NULL, 'users', 'email_encrypted',    'sensitive_pii', ARRAY['gdpr','ccpa','pipeda']::pii_regulation[], TRUE,  'Email address – encrypted with AES-256'),
+    (NULL, 'users', 'email_hash',         'internal',      ARRAY['gdpr','ccpa']::pii_regulation[],          FALSE, 'SHA-256 of email for lookup; cannot reconstruct PII'),
+    (NULL, 'users', 'phone_encrypted',    'sensitive_pii', ARRAY['gdpr','ccpa']::pii_regulation[],          TRUE,  'Phone number – encrypted'),
+    (NULL, 'users', 'phone_hash',         'internal',      ARRAY['gdpr','ccpa']::pii_regulation[],          FALSE, 'SHA-256 of phone for lookup'),
+    (NULL, 'users', 'last_login_ip',      'confidential',  ARRAY['gdpr','ccpa']::pii_regulation[],          FALSE, 'IP address may be PII under GDPR'),
+    -- user_profiles
+    (NULL, 'user_profiles', 'first_name_encrypted', 'sensitive_pii', ARRAY['gdpr','ccpa']::pii_regulation[], TRUE, 'First name – encrypted'),
+    (NULL, 'user_profiles', 'last_name_encrypted',  'sensitive_pii', ARRAY['gdpr','ccpa']::pii_regulation[], TRUE, 'Last name – encrypted'),
+    (NULL, 'user_profiles', 'address_encrypted',    'sensitive_pii', ARRAY['gdpr','ccpa','hipaa']::pii_regulation[], TRUE, 'Full address – encrypted'),
+    (NULL, 'user_profiles', 'birth_year',            'confidential',  ARRAY['gdpr','ccpa','coppa']::pii_regulation[], FALSE, 'Birth year (not full DOB)'),
+    -- mfa_devices
+    (NULL, 'mfa_devices', 'totp_secret_encrypted',  'restricted',    ARRAY['gdpr']::pii_regulation[], TRUE, 'TOTP secret – AES-256 encrypted'),
+    (NULL, 'mfa_devices', 'destination_encrypted',  'sensitive_pii', ARRAY['gdpr','ccpa']::pii_regulation[], TRUE, 'SMS/Email destination – encrypted'),
+    (NULL, 'mfa_devices', 'push_token_encrypted',   'restricted',    ARRAY['gdpr']::pii_regulation[], TRUE, 'Push notification token – encrypted'),
+    -- identity_providers
+    (NULL, 'identity_providers', 'client_secret_encrypted', 'restricted', '{}', TRUE, 'OAuth client secret – AES-256 encrypted'),
+    -- federated_identities
+    (NULL, 'federated_identities', 'access_token_encrypted',  'restricted', ARRAY['gdpr']::pii_regulation[], TRUE, 'IdP access token – encrypted'),
+    (NULL, 'federated_identities', 'refresh_token_encrypted', 'restricted', ARRAY['gdpr']::pii_regulation[], TRUE, 'IdP refresh token – encrypted'),
+    -- saml_configurations
+    (NULL, 'saml_configurations', 'sp_private_key_encrypted', 'restricted', '{}', TRUE, 'SAML SP private key – AES-256 encrypted'),
+    -- oidc_configurations
+    (NULL, 'oidc_configurations', 'client_secret_encrypted', 'restricted', '{}', TRUE, 'OIDC client secret – AES-256 encrypted')
+ON CONFLICT (tenant_id, table_name, column_name) DO NOTHING;
+
+-- ────────────────────────────────────────────────────────────
+-- 6. Sample UI translations (common auth strings)
+-- ────────────────────────────────────────────────────────────
+INSERT INTO ui_translations (tenant_id, language_code, namespace, key, value) VALUES
+    -- English
+    (NULL, 'en', 'auth', 'login.title',                   'Sign In'),
+    (NULL, 'en', 'auth', 'login.email_placeholder',       'Email address'),
+    (NULL, 'en', 'auth', 'login.password_placeholder',    'Password'),
+    (NULL, 'en', 'auth', 'login.submit',                  'Sign In'),
+    (NULL, 'en', 'auth', 'login.forgot_password',         'Forgot your password?'),
+    (NULL, 'en', 'auth', 'login.no_account',              'Don''t have an account?'),
+    (NULL, 'en', 'auth', 'login.register_link',           'Create one'),
+    (NULL, 'en', 'auth', 'mfa.title',                     'Two-Factor Authentication'),
+    (NULL, 'en', 'auth', 'mfa.enter_code',                'Enter the code from your authenticator app'),
+    (NULL, 'en', 'auth', 'mfa.use_recovery',              'Use a recovery code'),
+    (NULL, 'en', 'auth', 'errors.invalid_credentials',    'Invalid email or password'),
+    (NULL, 'en', 'auth', 'errors.account_locked',         'Account is temporarily locked. Please try again later.'),
+    (NULL, 'en', 'auth', 'errors.mfa_required',           'Multi-factor authentication is required'),
+    -- French
+    (NULL, 'fr', 'auth', 'login.title',                   'Se connecter'),
+    (NULL, 'fr', 'auth', 'login.email_placeholder',       'Adresse e-mail'),
+    (NULL, 'fr', 'auth', 'login.password_placeholder',    'Mot de passe'),
+    (NULL, 'fr', 'auth', 'login.submit',                  'Se connecter'),
+    (NULL, 'fr', 'auth', 'login.forgot_password',         'Mot de passe oublié ?'),
+    (NULL, 'fr', 'auth', 'mfa.title',                     'Authentification à deux facteurs'),
+    (NULL, 'fr', 'auth', 'errors.invalid_credentials',    'E-mail ou mot de passe incorrect'),
+    -- German
+    (NULL, 'de', 'auth', 'login.title',                   'Anmelden'),
+    (NULL, 'de', 'auth', 'login.email_placeholder',       'E-Mail-Adresse'),
+    (NULL, 'de', 'auth', 'login.password_placeholder',    'Passwort'),
+    (NULL, 'de', 'auth', 'login.submit',                  'Anmelden'),
+    (NULL, 'de', 'auth', 'login.forgot_password',         'Passwort vergessen?'),
+    (NULL, 'de', 'auth', 'mfa.title',                     'Zwei-Faktor-Authentifizierung'),
+    (NULL, 'de', 'auth', 'errors.invalid_credentials',    'Ungültige E-Mail oder Passwort'),
+    -- Spanish
+    (NULL, 'es', 'auth', 'login.title',                   'Iniciar sesión'),
+    (NULL, 'es', 'auth', 'login.email_placeholder',       'Correo electrónico'),
+    (NULL, 'es', 'auth', 'login.password_placeholder',    'Contraseña'),
+    (NULL, 'es', 'auth', 'login.submit',                  'Iniciar sesión'),
+    (NULL, 'es', 'auth', 'login.forgot_password',         '¿Olvidaste tu contraseña?'),
+    (NULL, 'es', 'auth', 'mfa.title',                     'Autenticación de dos factores'),
+    (NULL, 'es', 'auth', 'errors.invalid_credentials',    'Correo electrónico o contraseña no válidos'),
+    -- Japanese
+    (NULL, 'ja', 'auth', 'login.title',                   'ログイン'),
+    (NULL, 'ja', 'auth', 'login.email_placeholder',       'メールアドレス'),
+    (NULL, 'ja', 'auth', 'login.password_placeholder',    'パスワード'),
+    (NULL, 'ja', 'auth', 'login.submit',                  'ログイン'),
+    (NULL, 'ja', 'auth', 'errors.invalid_credentials',    'メールアドレスまたはパスワードが正しくありません'),
+    -- Portuguese (Brazil)
+    (NULL, 'pt-BR', 'auth', 'login.title',                'Entrar'),
+    (NULL, 'pt-BR', 'auth', 'login.email_placeholder',    'Endereço de e-mail'),
+    (NULL, 'pt-BR', 'auth', 'login.password_placeholder', 'Senha'),
+    (NULL, 'pt-BR', 'auth', 'login.submit',               'Entrar'),
+    (NULL, 'pt-BR', 'auth', 'errors.invalid_credentials', 'E-mail ou senha inválidos')
+ON CONFLICT (tenant_id, language_code, namespace, key) DO NOTHING;
+
+-- ────────────────────────────────────────────────────────────
+-- 7. Sample rate-limit configuration
+--    Applied to the first tenant if one exists.
+-- ────────────────────────────────────────────────────────────
 DO $$
 DECLARE
-    v_system_tenant_id UUID := '018f4d7e-7c00-7000-8000-000000000001'::UUID;
+    v_first_tenant UUID;
 BEGIN
-    INSERT INTO data_retention_policies
-        (id, tenant_id, resource_type, retention_days, action, regulation, is_active)
-    VALUES
-        (gen_random_uuid(), v_system_tenant_id, 'audit_logs',          365,  'delete',    'gdpr', TRUE),
-        (gen_random_uuid(), v_system_tenant_id, 'sessions',             90,  'delete',    'gdpr', TRUE),
-        (gen_random_uuid(), v_system_tenant_id, 'security_events',     180,  'delete',    'gdpr', TRUE),
-        (gen_random_uuid(), v_system_tenant_id, 'users',              2555,  'anonymize', 'gdpr', TRUE),  -- 7 years
-        (gen_random_uuid(), v_system_tenant_id, 'oauth_tokens',         30,  'delete',    'gdpr', TRUE)
-    ON CONFLICT (tenant_id, resource_type) DO NOTHING;
-END
-$$;
+    SELECT id INTO v_first_tenant FROM tenants LIMIT 1;
 
--- ---------------------------------------------------------------------------
--- UI translations – English baseline (auth namespace)
--- ---------------------------------------------------------------------------
-DO $$
-DECLARE
-    v_lang_id UUID;
-BEGIN
-    SELECT id INTO v_lang_id FROM languages WHERE code = 'en' LIMIT 1;
-    IF v_lang_id IS NULL THEN RETURN; END IF;
-
-    INSERT INTO ui_translations (id, tenant_id, language_id, key, value, namespace)
-    VALUES
-        (gen_random_uuid(), NULL, v_lang_id, 'login.title',               'Sign in to your account',  'auth'),
-        (gen_random_uuid(), NULL, v_lang_id, 'login.email_placeholder',   'Email address',             'auth'),
-        (gen_random_uuid(), NULL, v_lang_id, 'login.password_placeholder','Password',                  'auth'),
-        (gen_random_uuid(), NULL, v_lang_id, 'login.submit',              'Sign in',                   'auth'),
-        (gen_random_uuid(), NULL, v_lang_id, 'login.forgot_password',     'Forgot your password?',     'auth'),
-        (gen_random_uuid(), NULL, v_lang_id, 'login.register',            'Create an account',         'auth'),
-        (gen_random_uuid(), NULL, v_lang_id, 'mfa.title',                 'Two-factor authentication', 'auth'),
-        (gen_random_uuid(), NULL, v_lang_id, 'mfa.totp_prompt',           'Enter the 6-digit code from your authenticator app', 'auth'),
-        (gen_random_uuid(), NULL, v_lang_id, 'mfa.sms_prompt',            'Enter the code sent to your phone', 'auth'),
-        (gen_random_uuid(), NULL, v_lang_id, 'mfa.use_recovery_code',     'Use a recovery code',       'auth'),
-        (gen_random_uuid(), NULL, v_lang_id, 'error.invalid_credentials', 'Invalid email or password', 'auth'),
-        (gen_random_uuid(), NULL, v_lang_id, 'error.account_locked',      'Your account has been temporarily locked. Please try again later.', 'auth'),
-        (gen_random_uuid(), NULL, v_lang_id, 'error.mfa_invalid',         'Invalid verification code', 'auth'),
-        (gen_random_uuid(), NULL, v_lang_id, 'consent.title',             'Privacy & Consent',         'auth'),
-        (gen_random_uuid(), NULL, v_lang_id, 'consent.accept_all',        'Accept all',                'auth'),
-        (gen_random_uuid(), NULL, v_lang_id, 'consent.reject_optional',   'Reject optional cookies',   'auth'),
-        (gen_random_uuid(), NULL, v_lang_id, 'logout.title',              'You have been signed out',  'auth'),
-        (gen_random_uuid(), NULL, v_lang_id, 'oauth.authorize_title',     'Authorize Application',     'auth'),
-        (gen_random_uuid(), NULL, v_lang_id, 'oauth.grant_access',        'Allow access',              'auth'),
-        (gen_random_uuid(), NULL, v_lang_id, 'oauth.deny_access',         'Deny',                      'auth')
-    ON CONFLICT (tenant_id, language_id, namespace, key) DO NOTHING;
-END
+    IF v_first_tenant IS NOT NULL THEN
+        INSERT INTO rate_limit_configs (tenant_id, resource, max_requests, window_sec, scope, action) VALUES
+            (v_first_tenant, 'login',                   5,   60,   'ip',     'block'),
+            (v_first_tenant, 'login',                   10,  60,   'user',   'block'),
+            (v_first_tenant, 'password_reset',          3,   3600, 'ip',     'block'),
+            (v_first_tenant, 'mfa_verify',              5,   300,  'user',   'block'),
+            (v_first_tenant, 'email_verification',      5,   3600, 'user',   'block'),
+            (v_first_tenant, 'oauth_authorize',         30,  60,   'ip',     'captcha'),
+            (v_first_tenant, 'token_refresh',           60,  60,   'user',   'delay'),
+            (v_first_tenant, 'api',                     1000, 60,  'app',    'block'),
+            (v_first_tenant, 'registration',            10,  3600, 'ip',     'captcha')
+        ON CONFLICT (tenant_id, resource, scope) DO NOTHING;
+    END IF;
+END;
 $$;

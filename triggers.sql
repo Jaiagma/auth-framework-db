@@ -1,401 +1,481 @@
--- =============================================================================
+-- ============================================================
 -- triggers.sql
--- Triggers for the multi-tenant authentication framework.
--- Covers: updated_at timestamps, audit logging, password validation,
---         session expiry tracking, and security event generation.
--- =============================================================================
+-- Automated triggers for the multi-tenant authentication
+-- framework: audit logging, timestamp management, and data
+-- validation.
+--
+-- Prerequisites: enums.sql + schema.sql + functions.sql
+-- ============================================================
 
--- ---------------------------------------------------------------------------
--- HELPER: attach updated_at trigger to a table
--- ---------------------------------------------------------------------------
+-- ────────────────────────────────────────────────────────────
+-- 1. updated_at auto-update triggers
+--    Applied to every table that has an updated_at column.
+-- ────────────────────────────────────────────────────────────
 
--- Tenants
 CREATE TRIGGER trg_tenants_updated_at
     BEFORE UPDATE ON tenants
-    FOR EACH ROW EXECUTE FUNCTION fn_set_updated_at();
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
--- Applications
+CREATE TRIGGER trg_tenant_settings_updated_at
+    BEFORE UPDATE ON tenant_settings
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+CREATE TRIGGER trg_organizations_updated_at
+    BEFORE UPDATE ON organizations
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
 CREATE TRIGGER trg_applications_updated_at
     BEFORE UPDATE ON applications
-    FOR EACH ROW EXECUTE FUNCTION fn_set_updated_at();
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
--- Users
+CREATE TRIGGER trg_roles_updated_at
+    BEFORE UPDATE ON roles
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
 CREATE TRIGGER trg_users_updated_at
     BEFORE UPDATE ON users
-    FOR EACH ROW EXECUTE FUNCTION fn_set_updated_at();
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
--- MFA devices
+CREATE TRIGGER trg_user_profiles_updated_at
+    BEFORE UPDATE ON user_profiles
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+CREATE TRIGGER trg_user_credentials_updated_at
+    BEFORE UPDATE ON user_credentials
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
 CREATE TRIGGER trg_mfa_devices_updated_at
     BEFORE UPDATE ON mfa_devices
-    FOR EACH ROW EXECUTE FUNCTION fn_set_updated_at();
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
--- Identity providers
 CREATE TRIGGER trg_identity_providers_updated_at
     BEFORE UPDATE ON identity_providers
-    FOR EACH ROW EXECUTE FUNCTION fn_set_updated_at();
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
--- OIDC configurations
-CREATE TRIGGER trg_oidc_configurations_updated_at
-    BEFORE UPDATE ON oidc_configurations
-    FOR EACH ROW EXECUTE FUNCTION fn_set_updated_at();
-
--- SAML configurations
 CREATE TRIGGER trg_saml_configurations_updated_at
     BEFORE UPDATE ON saml_configurations
-    FOR EACH ROW EXECUTE FUNCTION fn_set_updated_at();
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
--- Federated identities
-CREATE TRIGGER trg_federated_identities_updated_at
-    BEFORE UPDATE ON federated_identities
-    FOR EACH ROW EXECUTE FUNCTION fn_set_updated_at();
+CREATE TRIGGER trg_oidc_configurations_updated_at
+    BEFORE UPDATE ON oidc_configurations
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
--- User localization preferences
 CREATE TRIGGER trg_user_localization_preferences_updated_at
     BEFORE UPDATE ON user_localization_preferences
-    FOR EACH ROW EXECUTE FUNCTION fn_set_updated_at();
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
--- Tenant regional settings
 CREATE TRIGGER trg_tenant_regional_settings_updated_at
     BEFORE UPDATE ON tenant_regional_settings
-    FOR EACH ROW EXECUTE FUNCTION fn_set_updated_at();
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
--- UI translations
 CREATE TRIGGER trg_ui_translations_updated_at
     BEFORE UPDATE ON ui_translations
-    FOR EACH ROW EXECUTE FUNCTION fn_set_updated_at();
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
--- User consents
 CREATE TRIGGER trg_user_consents_updated_at
     BEFORE UPDATE ON user_consents
-    FOR EACH ROW EXECUTE FUNCTION fn_set_updated_at();
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
--- Data retention policies
 CREATE TRIGGER trg_data_retention_policies_updated_at
     BEFORE UPDATE ON data_retention_policies
-    FOR EACH ROW EXECUTE FUNCTION fn_set_updated_at();
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
--- PII deletion requests
 CREATE TRIGGER trg_pii_deletion_requests_updated_at
     BEFORE UPDATE ON pii_deletion_requests
-    FOR EACH ROW EXECUTE FUNCTION fn_set_updated_at();
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
--- Data export requests
-CREATE TRIGGER trg_data_export_requests_updated_at
-    BEFORE UPDATE ON data_export_requests
-    FOR EACH ROW EXECUTE FUNCTION fn_set_updated_at();
+CREATE TRIGGER trg_security_events_updated_at
+    BEFORE UPDATE ON security_events
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
--- Webhooks
-CREATE TRIGGER trg_webhooks_updated_at
-    BEFORE UPDATE ON webhooks
-    FOR EACH ROW EXECUTE FUNCTION fn_set_updated_at();
+CREATE TRIGGER trg_rate_limit_configs_updated_at
+    BEFORE UPDATE ON rate_limit_configs
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
--- ---------------------------------------------------------------------------
--- AUDIT: users table
--- ---------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION fn_audit_users()
+CREATE TRIGGER trg_pii_data_classifications_updated_at
+    BEFORE UPDATE ON pii_data_classifications
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+CREATE TRIGGER trg_api_keys_updated_at
+    BEFORE UPDATE ON api_keys
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+CREATE TRIGGER trg_federated_identities_updated_at
+    BEFORE UPDATE ON federated_identities
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+-- ────────────────────────────────────────────────────────────
+-- 2. Audit-log triggers
+--    Write to audit_logs on INSERT / UPDATE / DELETE for
+--    sensitive tables.
+-- ────────────────────────────────────────────────────────────
+
+-- Generic audit trigger function; table-specific logic below.
+CREATE OR REPLACE FUNCTION audit_trigger_func()
 RETURNS TRIGGER
 LANGUAGE plpgsql
+SECURITY DEFINER   -- runs as owner so it can bypass RLS when writing audit_logs
 AS $$
 DECLARE
-    v_action audit_action;
+    v_tenant_id  UUID;
+    v_event_type audit_event_type;
+    v_resource   TEXT := TG_TABLE_NAME;
+    v_resource_id TEXT;
+    v_metadata   JSONB;
+    v_actor_id   UUID;
 BEGIN
+    -- Determine actor from session setting
+    v_actor_id := NULLIF(current_setting('app.current_user_id', TRUE), '')::UUID;
+
     IF TG_OP = 'INSERT' THEN
-        v_action := 'user_created';
-        PERFORM fn_write_audit_log(
-            NEW.tenant_id, NEW.id, NULL, NULL, NULL,
-            v_action, 'users', NEW.id,
-            NULL, NULL, NULL,
-            jsonb_build_object('status', NEW.status, 'role', NEW.role)
-        );
+        -- Try to extract tenant_id and id from the new row
+        BEGIN
+            v_tenant_id   := (row_to_json(NEW) ->> 'tenant_id')::UUID;
+            v_resource_id := row_to_json(NEW) ->> 'id';
+        EXCEPTION WHEN others THEN NULL;
+        END;
+        v_metadata := jsonb_build_object('operation', 'INSERT');
     ELSIF TG_OP = 'UPDATE' THEN
-        -- Status change
-        IF OLD.status <> NEW.status THEN
-            IF NEW.status = 'locked' THEN
-                v_action := 'user_locked';
-            ELSIF OLD.status = 'locked' AND NEW.status = 'active' THEN
-                v_action := 'user_unlocked';
-            ELSE
-                v_action := 'user_updated';
-            END IF;
-            PERFORM fn_write_audit_log(
-                NEW.tenant_id, NEW.id, NULL, NULL, NULL,
-                v_action, 'users', NEW.id,
-                NULL, NULL,
-                jsonb_build_object('status', OLD.status),
-                jsonb_build_object('status', NEW.status)
-            );
-        END IF;
-        -- Soft delete
-        IF OLD.deleted_at IS NULL AND NEW.deleted_at IS NOT NULL THEN
-            PERFORM fn_write_audit_log(
-                NEW.tenant_id, NEW.id, NULL, NULL, NULL,
-                'user_deleted', 'users', NEW.id,
-                NULL, NULL, NULL, NULL
-            );
-        END IF;
+        BEGIN
+            v_tenant_id   := (row_to_json(NEW) ->> 'tenant_id')::UUID;
+            v_resource_id := row_to_json(NEW) ->> 'id';
+        EXCEPTION WHEN others THEN NULL;
+        END;
+        v_metadata := jsonb_build_object('operation', 'UPDATE');
+    ELSIF TG_OP = 'DELETE' THEN
+        BEGIN
+            v_tenant_id   := (row_to_json(OLD) ->> 'tenant_id')::UUID;
+            v_resource_id := row_to_json(OLD) ->> 'id';
+        EXCEPTION WHEN others THEN NULL;
+        END;
+        v_metadata := jsonb_build_object('operation', 'DELETE');
+    END IF;
+
+    -- Only log if we can determine the tenant
+    IF v_tenant_id IS NOT NULL THEN
+        -- Map table / operation to event type using a sensible default
+        v_event_type := CASE
+            WHEN TG_TABLE_NAME = 'users'           AND TG_OP = 'INSERT' THEN 'user_created'
+            WHEN TG_TABLE_NAME = 'users'           AND TG_OP = 'UPDATE' THEN 'user_updated'
+            WHEN TG_TABLE_NAME = 'users'           AND TG_OP = 'DELETE' THEN 'user_deleted'
+            WHEN TG_TABLE_NAME = 'user_sessions'   AND TG_OP = 'INSERT' THEN 'login_success'
+            WHEN TG_TABLE_NAME = 'user_sessions'   AND TG_OP = 'UPDATE' THEN 'session_revoked'
+            WHEN TG_TABLE_NAME = 'mfa_devices'     AND TG_OP = 'INSERT' THEN 'mfa_enrolled'
+            WHEN TG_TABLE_NAME = 'mfa_devices'     AND TG_OP = 'DELETE' THEN 'mfa_revoked'
+            WHEN TG_TABLE_NAME = 'oauth_tokens'    AND TG_OP = 'INSERT' THEN 'token_issued'
+            WHEN TG_TABLE_NAME = 'oauth_tokens'    AND TG_OP = 'UPDATE' THEN 'token_revoked'
+            WHEN TG_TABLE_NAME = 'federated_identities' AND TG_OP = 'INSERT' THEN 'idp_linked'
+            WHEN TG_TABLE_NAME = 'federated_identities' AND TG_OP = 'DELETE' THEN 'idp_unlinked'
+            WHEN TG_TABLE_NAME = 'user_consents'   AND TG_OP = 'INSERT' THEN 'consent_given'
+            WHEN TG_TABLE_NAME = 'user_consents'   AND TG_OP = 'UPDATE' THEN 'consent_withdrawn'
+            WHEN TG_TABLE_NAME = 'pii_deletion_requests' AND TG_OP = 'INSERT' THEN 'data_deletion_requested'
+            WHEN TG_TABLE_NAME = 'api_keys'        AND TG_OP = 'INSERT' THEN 'api_key_created'
+            WHEN TG_TABLE_NAME = 'api_keys'        AND TG_OP = 'UPDATE' THEN 'api_key_revoked'
+            WHEN TG_TABLE_NAME = 'user_roles'      AND TG_OP = 'INSERT' THEN 'role_assigned'
+            WHEN TG_TABLE_NAME = 'user_roles'      AND TG_OP = 'DELETE' THEN 'role_revoked'
+            ELSE 'user_updated'   -- safe fallback
+        END;
+
+        INSERT INTO audit_logs (
+            tenant_id,
+            event_type,
+            actor_user_id,
+            actor_type,
+            resource_type,
+            resource_id,
+            metadata
+        )
+        VALUES (
+            v_tenant_id,
+            v_event_type,
+            v_actor_id,
+            COALESCE(current_setting('app.actor_type', TRUE), 'user'),
+            v_resource,
+            v_resource_id,
+            v_metadata
+        );
+    END IF;
+
+    IF TG_OP = 'DELETE' THEN
+        RETURN OLD;
     END IF;
     RETURN NEW;
 END;
 $$;
 
+-- Attach audit trigger to sensitive tables
 CREATE TRIGGER trg_audit_users
-    AFTER INSERT OR UPDATE ON users
-    FOR EACH ROW EXECUTE FUNCTION fn_audit_users();
+    AFTER INSERT OR UPDATE OR DELETE ON users
+    FOR EACH ROW EXECUTE FUNCTION audit_trigger_func();
 
--- ---------------------------------------------------------------------------
--- AUDIT: sessions table
--- ---------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION fn_audit_sessions()
-RETURNS TRIGGER
-LANGUAGE plpgsql
-AS $$
-BEGIN
-    IF TG_OP = 'INSERT' THEN
-        PERFORM fn_write_audit_log(
-            NEW.tenant_id, NEW.user_id, NULL, NEW.application_id, NEW.id,
-            'user_login', 'sessions', NEW.id,
-            NEW.ip_address, NEW.user_agent, NULL,
-            jsonb_build_object('method', NEW.auth_methods, 'mfa_verified', NEW.mfa_verified)
-        );
-    ELSIF TG_OP = 'UPDATE' THEN
-        IF OLD.status = 'active' AND NEW.status = 'logged_out' THEN
-            PERFORM fn_write_audit_log(
-                NEW.tenant_id, NEW.user_id, NULL, NEW.application_id, NEW.id,
-                'user_logout', 'sessions', NEW.id,
-                NULL, NULL, NULL, NULL
-            );
-        ELSIF OLD.status = 'active' AND NEW.status = 'revoked' THEN
-            PERFORM fn_write_audit_log(
-                NEW.tenant_id, NEW.user_id, NULL, NEW.application_id, NEW.id,
-                'user_logout', 'sessions', NEW.id,
-                NULL, NULL, NULL,
-                jsonb_build_object('reason', 'revoked')
-            );
-        END IF;
-    END IF;
-    RETURN NEW;
-END;
-$$;
-
-CREATE TRIGGER trg_audit_sessions
-    AFTER INSERT OR UPDATE ON sessions
-    FOR EACH ROW EXECUTE FUNCTION fn_audit_sessions();
-
--- ---------------------------------------------------------------------------
--- AUDIT: MFA devices
--- ---------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION fn_audit_mfa_devices()
-RETURNS TRIGGER
-LANGUAGE plpgsql
-AS $$
-BEGIN
-    IF TG_OP = 'INSERT' AND NEW.status = 'active' THEN
-        PERFORM fn_write_audit_log(
-            NEW.tenant_id, NEW.user_id, NULL, NULL, NULL,
-            'mfa_enrolled', 'mfa_devices', NEW.id,
-            NULL, NULL, NULL,
-            jsonb_build_object('method', NEW.method)
-        );
-    ELSIF TG_OP = 'UPDATE' THEN
-        IF OLD.status <> 'active' AND NEW.status = 'active' THEN
-            PERFORM fn_write_audit_log(
-                NEW.tenant_id, NEW.user_id, NULL, NULL, NULL,
-                'mfa_enrolled', 'mfa_devices', NEW.id,
-                NULL, NULL, NULL,
-                jsonb_build_object('method', NEW.method)
-            );
-        ELSIF OLD.status = 'active' AND NEW.status IN ('disabled','revoked') THEN
-            PERFORM fn_write_audit_log(
-                NEW.tenant_id, NEW.user_id, NULL, NULL, NULL,
-                'mfa_disabled', 'mfa_devices', NEW.id,
-                NULL, NULL, NULL,
-                jsonb_build_object('method', NEW.method)
-            );
-        END IF;
-    END IF;
-    RETURN NEW;
-END;
-$$;
+CREATE TRIGGER trg_audit_user_sessions
+    AFTER INSERT OR UPDATE ON user_sessions
+    FOR EACH ROW EXECUTE FUNCTION audit_trigger_func();
 
 CREATE TRIGGER trg_audit_mfa_devices
-    AFTER INSERT OR UPDATE ON mfa_devices
-    FOR EACH ROW EXECUTE FUNCTION fn_audit_mfa_devices();
-
--- ---------------------------------------------------------------------------
--- AUDIT: OAuth tokens
--- ---------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION fn_audit_oauth_tokens()
-RETURNS TRIGGER
-LANGUAGE plpgsql
-AS $$
-BEGIN
-    IF TG_OP = 'INSERT' THEN
-        PERFORM fn_write_audit_log(
-            NEW.tenant_id, NEW.user_id, NULL, NEW.application_id, NEW.session_id,
-            'oauth_token_issued', 'oauth_tokens', NEW.id,
-            NULL, NULL, NULL,
-            jsonb_build_object('token_type', NEW.token_type, 'grant_type', NEW.grant_type)
-        );
-    ELSIF TG_OP = 'UPDATE' THEN
-        IF OLD.status <> 'revoked' AND NEW.status = 'revoked' THEN
-            PERFORM fn_write_audit_log(
-                NEW.tenant_id, NEW.user_id, NULL, NEW.application_id, NEW.session_id,
-                'oauth_token_revoked', 'oauth_tokens', NEW.id,
-                NULL, NULL, NULL,
-                jsonb_build_object('token_type', NEW.token_type)
-            );
-        END IF;
-    END IF;
-    RETURN NEW;
-END;
-$$;
+    AFTER INSERT OR DELETE ON mfa_devices
+    FOR EACH ROW EXECUTE FUNCTION audit_trigger_func();
 
 CREATE TRIGGER trg_audit_oauth_tokens
     AFTER INSERT OR UPDATE ON oauth_tokens
-    FOR EACH ROW EXECUTE FUNCTION fn_audit_oauth_tokens();
+    FOR EACH ROW EXECUTE FUNCTION audit_trigger_func();
 
--- ---------------------------------------------------------------------------
--- AUDIT: User consent changes
--- ---------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION fn_audit_user_consents()
-RETURNS TRIGGER
-LANGUAGE plpgsql
-AS $$
-BEGIN
-    IF TG_OP = 'INSERT' OR TG_OP = 'UPDATE' THEN
-        IF NEW.status = 'given' AND (TG_OP = 'INSERT' OR OLD.status <> 'given') THEN
-            PERFORM fn_write_audit_log(
-                NEW.tenant_id, NEW.user_id, NULL, NULL, NULL,
-                'consent_given', 'user_consents', NEW.id,
-                NEW.ip_address, NULL, NULL,
-                jsonb_build_object('consent_type', NEW.consent_type, 'version', NEW.version)
-            );
-        ELSIF NEW.status = 'withdrawn' AND (TG_OP = 'INSERT' OR OLD.status <> 'withdrawn') THEN
-            PERFORM fn_write_audit_log(
-                NEW.tenant_id, NEW.user_id, NULL, NULL, NULL,
-                'consent_revoked', 'user_consents', NEW.id,
-                NULL, NULL, NULL,
-                jsonb_build_object('consent_type', NEW.consent_type, 'version', NEW.version)
-            );
-        END IF;
-    END IF;
-    RETURN NEW;
-END;
-$$;
+CREATE TRIGGER trg_audit_federated_identities
+    AFTER INSERT OR DELETE ON federated_identities
+    FOR EACH ROW EXECUTE FUNCTION audit_trigger_func();
 
 CREATE TRIGGER trg_audit_user_consents
     AFTER INSERT OR UPDATE ON user_consents
-    FOR EACH ROW EXECUTE FUNCTION fn_audit_user_consents();
+    FOR EACH ROW EXECUTE FUNCTION audit_trigger_func();
 
--- ---------------------------------------------------------------------------
--- SECURITY: auto-generate security event on repeated failed logins
--- ---------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION fn_detect_brute_force()
+CREATE TRIGGER trg_audit_pii_deletion_requests
+    AFTER INSERT ON pii_deletion_requests
+    FOR EACH ROW EXECUTE FUNCTION audit_trigger_func();
+
+CREATE TRIGGER trg_audit_api_keys
+    AFTER INSERT OR UPDATE ON api_keys
+    FOR EACH ROW EXECUTE FUNCTION audit_trigger_func();
+
+CREATE TRIGGER trg_audit_user_roles
+    AFTER INSERT OR DELETE ON user_roles
+    FOR EACH ROW EXECUTE FUNCTION audit_trigger_func();
+
+-- ────────────────────────────────────────────────────────────
+-- 3. User account-lock auto-expiry trigger
+--    Unlock the account when locked_until has passed.
+-- ────────────────────────────────────────────────────────────
+
+CREATE OR REPLACE FUNCTION auto_unlock_user()
 RETURNS TRIGGER
 LANGUAGE plpgsql
 AS $$
 BEGIN
-    -- Threshold: 5 failures → medium, 10 → high, 20 → critical
-    IF NEW.failed_login_attempts IN (5, 10, 20) THEN
-        INSERT INTO security_events (
-            id, tenant_id, user_id, event_type, severity,
-            description, risk_score, occurred_at
-        ) VALUES (
-            uuid_generate_v7(),
-            NEW.tenant_id,
-            NEW.id,
-            'brute_force',
-            CASE NEW.failed_login_attempts
-                WHEN 5  THEN 'medium'::security_event_severity
-                WHEN 10 THEN 'high'::security_event_severity
-                ELSE        'critical'::security_event_severity
-            END,
-            'Brute-force attempt detected: ' || NEW.failed_login_attempts || ' failed logins',
-            LEAST(NEW.failed_login_attempts * 5, 100),
-            now()
-        );
+    IF NEW.status = 'locked'
+       AND NEW.locked_until IS NOT NULL
+       AND NEW.locked_until <= now() THEN
+        NEW.status              := 'active';
+        NEW.locked_until        := NULL;
+        NEW.failed_login_count  := 0;
     END IF;
     RETURN NEW;
 END;
 $$;
 
-CREATE TRIGGER trg_detect_brute_force
-    AFTER UPDATE OF failed_login_attempts ON users
-    FOR EACH ROW EXECUTE FUNCTION fn_detect_brute_force();
+CREATE TRIGGER trg_auto_unlock_user
+    BEFORE UPDATE ON users
+    FOR EACH ROW EXECUTE FUNCTION auto_unlock_user();
 
--- ---------------------------------------------------------------------------
--- SECURITY: auto-expire sessions past their expiry time on access
--- ---------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION fn_auto_expire_session()
+-- ────────────────────────────────────────────────────────────
+-- 4. Prevent deletion of system roles
+-- ────────────────────────────────────────────────────────────
+
+CREATE OR REPLACE FUNCTION prevent_system_role_deletion()
 RETURNS TRIGGER
 LANGUAGE plpgsql
 AS $$
 BEGIN
-    IF NEW.status = 'active' AND NEW.expires_at < now() THEN
-        NEW.status := 'expired';
+    IF OLD.is_system = TRUE THEN
+        RAISE EXCEPTION 'Cannot delete a system role: %', OLD.name;
     END IF;
-    RETURN NEW;
+    RETURN OLD;
 END;
 $$;
 
-CREATE TRIGGER trg_auto_expire_session
-    BEFORE UPDATE ON sessions
-    FOR EACH ROW EXECUTE FUNCTION fn_auto_expire_session();
+CREATE TRIGGER trg_prevent_system_role_deletion
+    BEFORE DELETE ON roles
+    FOR EACH ROW EXECUTE FUNCTION prevent_system_role_deletion();
 
--- ---------------------------------------------------------------------------
--- COMPLIANCE: set scheduled_for on new PII deletion requests
--- ---------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION fn_schedule_deletion_request()
-RETURNS TRIGGER
-LANGUAGE plpgsql
-AS $$
-BEGIN
-    -- Default: 30 days cool-off period (GDPR Art. 17 allows reasonable time)
-    IF NEW.scheduled_for IS NULL THEN
-        NEW.scheduled_for := now() + INTERVAL '30 days';
-    END IF;
-    RETURN NEW;
-END;
-$$;
+-- ────────────────────────────────────────────────────────────
+-- 5. Password history enforcement
+--    Prevents reuse of the last N passwords.
+-- ────────────────────────────────────────────────────────────
 
-CREATE TRIGGER trg_schedule_deletion_request
-    BEFORE INSERT ON pii_deletion_requests
-    FOR EACH ROW EXECUTE FUNCTION fn_schedule_deletion_request();
-
--- ---------------------------------------------------------------------------
--- INTEGRITY: prevent password reuse (last 5 passwords)
--- ---------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION fn_check_password_reuse()
+CREATE OR REPLACE FUNCTION check_password_history()
 RETURNS TRIGGER
 LANGUAGE plpgsql
 AS $$
 DECLARE
-    v_reused BOOLEAN;
+    v_hist_count INT;
+    v_hist TEXT[];
+    v_h    TEXT;
 BEGIN
-    SELECT EXISTS (
-        SELECT 1
-        FROM user_passwords
-        WHERE user_id = NEW.user_id
-          AND is_current = FALSE
-          AND password_hash = NEW.password_hash
-        ORDER BY created_at DESC
-        LIMIT 5
-    ) INTO v_reused;
-
-    IF v_reused THEN
-        RAISE EXCEPTION 'Password has been used recently.' USING ERRCODE = 'P0001';
+    -- Only enforce on password credential type
+    IF NEW.credential_type <> 'password'
+       OR NEW.password_hash IS NULL THEN
+        RETURN NEW;
     END IF;
 
-    -- Mark previous passwords as not current
-    UPDATE user_passwords
-    SET is_current = FALSE
-    WHERE user_id   = NEW.user_id
-      AND id       <> NEW.id;
+    -- Check against stored history
+    FOREACH v_h IN ARRAY COALESCE(OLD.password_history, '{}')
+    LOOP
+        IF crypt(NEW.password_hash, v_h) = v_h THEN
+            RAISE EXCEPTION 'Password was recently used. Please choose a different password.';
+        END IF;
+    END LOOP;
+
+    -- Prepend old hash to history, keep last 10
+    IF OLD.password_hash IS NOT NULL THEN
+        v_hist := ARRAY[OLD.password_hash] || COALESCE(OLD.password_history, '{}');
+        NEW.password_history := v_hist[1:10];
+    END IF;
 
     RETURN NEW;
 END;
 $$;
 
-CREATE TRIGGER trg_check_password_reuse
-    BEFORE INSERT ON user_passwords
-    FOR EACH ROW EXECUTE FUNCTION fn_check_password_reuse();
+CREATE TRIGGER trg_check_password_history
+    BEFORE UPDATE ON user_credentials
+    FOR EACH ROW EXECUTE FUNCTION check_password_history();
+
+-- ────────────────────────────────────────────────────────────
+-- 6. Soft-delete cascade trigger
+--    When a user is soft-deleted (deleted_at set), cascade
+--    revocation of sessions, tokens, and MFA devices.
+-- ────────────────────────────────────────────────────────────
+
+CREATE OR REPLACE FUNCTION cascade_user_soft_delete()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    IF NEW.deleted_at IS NOT NULL AND OLD.deleted_at IS NULL THEN
+        -- Revoke active sessions
+        UPDATE user_sessions
+        SET status     = 'revoked',
+            revoked_at = now()
+        WHERE user_id  = NEW.id AND status = 'active';
+
+        -- Revoke active OAuth tokens
+        UPDATE oauth_tokens
+        SET status           = 'revoked',
+            revoked_at       = now(),
+            revocation_reason = 'user_soft_deleted'
+        WHERE user_id = NEW.id AND status = 'active';
+
+        -- Deactivate MFA devices
+        UPDATE mfa_devices
+        SET status     = 'revoked',
+            updated_at = now()
+        WHERE user_id = NEW.id AND status = 'active';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER trg_cascade_user_soft_delete
+    AFTER UPDATE ON users
+    FOR EACH ROW EXECUTE FUNCTION cascade_user_soft_delete();
+
+-- ────────────────────────────────────────────────────────────
+-- 7. Enforce tenant max_users limit
+-- ────────────────────────────────────────────────────────────
+
+CREATE OR REPLACE FUNCTION enforce_tenant_max_users()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_max    INT;
+    v_count  INT;
+BEGIN
+    SELECT max_users INTO v_max
+    FROM tenants
+    WHERE id = NEW.tenant_id;
+
+    IF v_max IS NULL THEN
+        RETURN NEW;   -- no limit set
+    END IF;
+
+    SELECT COUNT(*) INTO v_count
+    FROM users
+    WHERE tenant_id = NEW.tenant_id
+      AND deleted_at IS NULL;
+
+    IF v_count >= v_max THEN
+        RAISE EXCEPTION 'Tenant has reached the maximum user limit of %', v_max;
+    END IF;
+
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER trg_enforce_tenant_max_users
+    BEFORE INSERT ON users
+    FOR EACH ROW EXECUTE FUNCTION enforce_tenant_max_users();
+
+-- ────────────────────────────────────────────────────────────
+-- 8. Enforce tenant max_applications limit
+-- ────────────────────────────────────────────────────────────
+
+CREATE OR REPLACE FUNCTION enforce_tenant_max_applications()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_max   INT;
+    v_count INT;
+BEGIN
+    SELECT max_applications INTO v_max
+    FROM tenants
+    WHERE id = NEW.tenant_id;
+
+    IF v_max IS NULL THEN
+        RETURN NEW;
+    END IF;
+
+    SELECT COUNT(*) INTO v_count
+    FROM applications
+    WHERE tenant_id = NEW.tenant_id
+      AND deleted_at IS NULL;
+
+    IF v_count >= v_max THEN
+        RAISE EXCEPTION 'Tenant has reached the maximum application limit of %', v_max;
+    END IF;
+
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER trg_enforce_tenant_max_applications
+    BEFORE INSERT ON applications
+    FOR EACH ROW EXECUTE FUNCTION enforce_tenant_max_applications();
+
+-- ────────────────────────────────────────────────────────────
+-- 9. Auto-expire OAuth authorisation codes (idempotent mark)
+-- ────────────────────────────────────────────────────────────
+
+CREATE OR REPLACE FUNCTION mark_auth_code_used()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    IF NEW.is_used = TRUE AND OLD.is_used = FALSE THEN
+        NEW.used_at := now();
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER trg_mark_auth_code_used
+    BEFORE UPDATE ON oauth_authorization_codes
+    FOR EACH ROW EXECUTE FUNCTION mark_auth_code_used();
+
+-- ────────────────────────────────────────────────────────────
+-- 10. Set GDPR deletion deadline (30 calendar days by default)
+-- ────────────────────────────────────────────────────────────
+
+CREATE OR REPLACE FUNCTION set_deletion_deadline()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    IF NEW.deadline_at IS NULL THEN
+        NEW.deadline_at := NEW.requested_at + INTERVAL '30 days';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER trg_set_deletion_deadline
+    BEFORE INSERT ON pii_deletion_requests
+    FOR EACH ROW EXECUTE FUNCTION set_deletion_deadline();
