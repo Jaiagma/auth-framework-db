@@ -1,0 +1,231 @@
+trigger:
+  branches:
+    include:
+      - main
+      - develop
+  paths:
+    exclude:
+      - docs/**
+      - '*.md'
+
+pr:
+  branches:
+    include:
+      - main
+      - develop
+
+variables:
+  buildConfiguration: Release
+  dotnetVersion: '9.0.x'
+  acrLoginServer: $(ACR_LOGIN_SERVER)
+  imageRepository: authframework-api
+  dockerfilePath: auth-framework-api/Dockerfile
+  dockerBuildContext: auth-framework-api/
+  tag: $(Build.BuildId)
+  vmImageName: ubuntu-latest
+
+pool:
+  vmImage: $(vmImageName)
+
+stages:
+  # ---------------------------------------------------------------------------
+  # Stage: Build
+  # ---------------------------------------------------------------------------
+  - stage: Build
+    displayName: Build & Package
+    jobs:
+      - job: Build
+        displayName: Restore, Build & Docker Image
+        steps:
+          - task: UseDotNet@2
+            displayName: Install .NET SDK $(dotnetVersion)
+            inputs:
+              packageType: sdk
+              version: $(dotnetVersion)
+
+          - script: dotnet restore auth-framework-api/AuthFramework.sln
+            displayName: Restore NuGet packages
+
+          - script: >
+              dotnet build auth-framework-api/AuthFramework.sln
+              --configuration $(buildConfiguration)
+              --no-restore
+            displayName: Build solution
+
+          - script: >
+              dotnet publish auth-framework-api/src/AuthFramework.Api/AuthFramework.Api.csproj
+              --configuration $(buildConfiguration)
+              --no-restore
+              --output $(Build.ArtifactStagingDirectory)/publish
+            displayName: Publish API binaries
+
+          - task: PublishPipelineArtifact@1
+            displayName: Publish build artifact
+            inputs:
+              targetPath: $(Build.ArtifactStagingDirectory)/publish
+              artifact: build-output
+              publishLocation: pipeline
+
+          - task: Docker@2
+            displayName: Build and push Docker image to ACR
+            inputs:
+              command: buildAndPush
+              containerRegistry: $(ACR_SERVICE_CONNECTION)
+              repository: $(imageRepository)
+              dockerfile: $(dockerfilePath)
+              buildContext: $(dockerBuildContext)
+              tags: |
+                $(tag)
+                latest
+
+  # ---------------------------------------------------------------------------
+  # Stage: Test
+  # ---------------------------------------------------------------------------
+  - stage: Test
+    displayName: Unit & Integration Tests
+    dependsOn: Build
+    jobs:
+      - job: UnitTests
+        displayName: Run Unit Tests
+        steps:
+          - task: UseDotNet@2
+            displayName: Install .NET SDK $(dotnetVersion)
+            inputs:
+              packageType: sdk
+              version: $(dotnetVersion)
+
+          - script: dotnet restore auth-framework-api/AuthFramework.sln
+            displayName: Restore NuGet packages
+
+          - script: >
+              dotnet test auth-framework-api/AuthFramework.sln
+              --filter Category=Unit
+              --configuration $(buildConfiguration)
+              --no-restore
+              --logger trx
+              --results-directory $(Agent.TempDirectory)/TestResults
+              --collect:"XPlat Code Coverage"
+              -- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Format=cobertura
+            displayName: Run unit tests
+
+          - task: PublishTestResults@2
+            displayName: Publish unit test results
+            condition: always()
+            inputs:
+              testResultsFormat: VSTest
+              testResultsFiles: '$(Agent.TempDirectory)/TestResults/**/*.trx'
+              mergeTestResults: true
+              testRunTitle: Unit Tests
+
+          - task: PublishCodeCoverageResults@2
+            displayName: Publish code coverage
+            condition: always()
+            inputs:
+              summaryFileLocation: '$(Agent.TempDirectory)/TestResults/**/coverage.cobertura.xml'
+
+      - job: IntegrationTests
+        displayName: Run Integration Tests
+        services:
+          postgres:
+            image: postgres:16-alpine
+            env:
+              POSTGRES_DB: authframework_test
+              POSTGRES_USER: authframework
+              POSTGRES_PASSWORD: test_password_ci
+            ports:
+              - 5432:5432
+            options: >-
+              --health-cmd "pg_isready -U authframework"
+              --health-interval 10s
+              --health-timeout 5s
+              --health-retries 5
+        steps:
+          - task: UseDotNet@2
+            displayName: Install .NET SDK $(dotnetVersion)
+            inputs:
+              packageType: sdk
+              version: $(dotnetVersion)
+
+          - script: dotnet restore auth-framework-api/AuthFramework.sln
+            displayName: Restore NuGet packages
+
+          - script: >
+              dotnet test auth-framework-api/AuthFramework.sln
+              --filter Category=Integration
+              --configuration $(buildConfiguration)
+              --no-restore
+              --logger trx
+              --results-directory $(Agent.TempDirectory)/IntegrationTestResults
+            displayName: Run integration tests
+            env:
+              ConnectionStrings__DefaultConnection: >-
+                Host=localhost;Port=5432;Database=authframework_test;
+                Username=authframework;Password=test_password_ci;SslMode=Disable
+
+          - task: PublishTestResults@2
+            displayName: Publish integration test results
+            condition: always()
+            inputs:
+              testResultsFormat: VSTest
+              testResultsFiles: '$(Agent.TempDirectory)/IntegrationTestResults/**/*.trx'
+              mergeTestResults: true
+              testRunTitle: Integration Tests
+
+  # ---------------------------------------------------------------------------
+  # Stage: Deploy to Staging
+  # ---------------------------------------------------------------------------
+  - stage: DeployStaging
+    displayName: Deploy to Staging
+    dependsOn: Test
+    condition: >-
+      and(
+        succeeded(),
+        eq(variables['Build.SourceBranch'], 'refs/heads/main')
+      )
+    jobs:
+      - deployment: DeployStaging
+        displayName: Deploy API to Staging slot
+        environment: staging
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - task: AzureWebApp@1
+                  displayName: Deploy to App Service staging slot
+                  inputs:
+                    azureSubscription: $(AZURE_SERVICE_CONNECTION)
+                    appType: webAppContainer
+                    appName: $(APP_SERVICE_NAME)
+                    deployToSlotOrASE: true
+                    resourceGroupName: $(RESOURCE_GROUP)
+                    slotName: staging
+                    containers: $(acrLoginServer)/$(imageRepository):$(tag)
+
+  # ---------------------------------------------------------------------------
+  # Stage: Deploy to Production
+  # ---------------------------------------------------------------------------
+  - stage: DeployProduction
+    displayName: Deploy to Production
+    dependsOn: DeployStaging
+    condition: >-
+      and(
+        succeeded(),
+        eq(variables['Build.SourceBranch'], 'refs/heads/main')
+      )
+    jobs:
+      - deployment: DeployProduction
+        displayName: Swap staging slot to production
+        environment: production
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - task: AzureAppServiceManage@0
+                  displayName: Swap staging → production slots
+                  inputs:
+                    azureSubscription: $(AZURE_SERVICE_CONNECTION)
+                    action: Swap Slots
+                    webAppName: $(APP_SERVICE_NAME)
+                    resourceGroupName: $(RESOURCE_GROUP)
+                    sourceSlot: staging
+                    swapWithProduction: true

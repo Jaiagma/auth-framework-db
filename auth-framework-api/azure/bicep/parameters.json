@@ -1,0 +1,54 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "environment": {
+      "value": "dev"
+    },
+    "location": {
+      "value": "eastus2"
+    },
+    "projectName": {
+      "value": "authframework"
+    },
+    "dbPassword": {
+      "reference": {
+        "keyVault": {
+          "id": "/subscriptions/YOUR_SUBSCRIPTION_ID/resourceGroups/rg-secrets/providers/Microsoft.KeyVault/vaults/YOUR_KEYVAULT_NAME"
+        },
+        "secretName": "db-password"
+      }
+    },
+    "jwtSecretKey": {
+      "reference": {
+        "keyVault": {
+          "id": "/subscriptions/YOUR_SUBSCRIPTION_ID/resourceGroups/rg-secrets/providers/Microsoft.KeyVault/vaults/YOUR_KEYVAULT_NAME"
+        },
+        "secretName": "jwt-secret-key"
+      }
+    },
+    "encryptionKey": {
+      "reference": {
+        "keyVault": {
+          "id": "/subscriptions/YOUR_SUBSCRIPTION_ID/resourceGroups/rg-secrets/providers/Microsoft.KeyVault/vaults/YOUR_KEYVAULT_NAME"
+        },
+        "secretName": "encryption-key"
+      }
+    },
+    "alertEmail": {
+      "value": "ops@example.com"
+    },
+    "appServiceSkuName": {
+      "value": "B2"
+    },
+    "postgresqlSkuName": {
+      "value": "Standard_B1ms"
+    },
+    "imageTag": {
+      "value": "latest"
+    },
+    "acrLoginServer": {
+      "value": "YOUR_ACR_NAME.azurecr.io"
+    }
+  }
+}

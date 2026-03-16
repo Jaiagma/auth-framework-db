@@ -1,0 +1,35 @@
+{
+  "ApplicationInsights": {
+    "ConnectionString": "",
+    "EnableAdaptiveSampling": true,
+    "EnablePerformanceCounterCollectionModule": true,
+    "EnableDependencyTrackingTelemetryModule": true,
+    "EnableAppServicesHeartbeatTelemetryModule": true,
+    "EnableAzureInstanceMetadataTelemetryModule": true,
+    "EnableQuickPulseMetricStream": true,
+    "EnableRequestTrackingTelemetryModule": true,
+    "EnableEventCounterCollectionModule": true,
+    "AddAutoCollectedMetricExtractor": true,
+    "SamplingSettings": {
+      "IsEnabled": true,
+      "MaxTelemetryItemsPerSecond": 20,
+      "MinSamplingPercentage": 5.0,
+      "MaxSamplingPercentage": 100.0,
+      "EvaluationInterval": "00:00:15",
+      "SamplingPercentageDecreaseTimeout": "00:02:00",
+      "SamplingPercentageIncreaseTimeout": "00:15:00",
+      "MovingAverageRatio": 0.25
+    },
+    "DependencyCollectionOptions": {
+      "EnableLegacyCorrelationHeadersInjection": false
+    },
+    "RequestCollectionOptions": {
+      "EnableW3CDistributedTracing": true,
+      "TrackExceptions": true,
+      "InjectResponseHeaders": true
+    },
+    "LoggingOptions": {
+      "Level": "Information"
+    }
+  }
+}
